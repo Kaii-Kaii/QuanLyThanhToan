@@ -2,9 +2,12 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart'; // Import để định dạng ngày tháng và số
+import 'package:intl/intl.dart';
+import 'package:table_calendar/table_calendar.dart';
 import '../../services/auth_service.dart';
-import 'add_subscription_screen.dart'; // Import màn hình thêm mới
+import 'add_subscription_screen.dart';
+import 'subscription_detail_screen.dart';
+import '../profile/profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -15,12 +18,75 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final AuthService _authService = AuthService();
+  DateTime _focusedDay = DateTime.now();
+  DateTime? _selectedDay;
+  Set<DateTime> _paymentDays = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAndUpdateExpiredPayments();
+  }
+
+  Future<void> _checkAndUpdateExpiredPayments() async {
+    final currentUserId = _authService.currentUser?.uid;
+    if (currentUserId == null) return;
+
+    final snapshot =
+        await FirebaseFirestore.instance
+            .collection('subscriptions')
+            .where('userId', isEqualTo: currentUserId)
+            .get();
+
+    for (var doc in snapshot.docs) {
+      final data = doc.data();
+      await _updateNextPaymentDateIfNeeded(doc, data);
+    }
+  }
+
+  Future<void> _updateNextPaymentDateIfNeeded(
+    DocumentSnapshot document,
+    Map<String, dynamic> data,
+  ) async {
+    DateTime? nextDate;
+    if (data['nextPaymentDate'] != null) {
+      nextDate = (data['nextPaymentDate'] as Timestamp).toDate();
+    }
+    final now = DateTime.now();
+
+    if (nextDate != null && now.isAfter(nextDate)) {
+      String cycle = data['paymentCycle'] ?? 'monthly';
+      DateTime updatedDate = nextDate;
+
+      while (!updatedDate.isAfter(now)) {
+        if (cycle == 'monthly') {
+          updatedDate = DateTime(
+            updatedDate.year,
+            updatedDate.month + 1,
+            updatedDate.day,
+          );
+        } else if (cycle == 'yearly') {
+          updatedDate = DateTime(
+            updatedDate.year + 1,
+            updatedDate.month,
+            updatedDate.day,
+          );
+        } else {
+          break;
+        }
+      }
+
+      await FirebaseFirestore.instance
+          .collection('subscriptions')
+          .doc(document.id)
+          .update({'nextPaymentDate': Timestamp.fromDate(updatedDate)});
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final String? currentUserId = _authService.currentUser?.uid;
 
-    // Trường hợp hiếm gặp: không có user, hiển thị lỗi
     if (currentUserId == null) {
       return const Scaffold(
         body: Center(
@@ -33,130 +99,158 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('Các khoản thanh toán'),
         actions: [
-          // Nút Đăng xuất
           IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Đăng xuất',
-            onPressed: () async {
-              await _authService.signOut();
-              // AuthGate sẽ tự động chuyển hướng về màn hình đăng nhập
+            icon: const Icon(Icons.account_circle),
+            tooltip: 'Thông tin cá nhân',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ProfileScreen()),
+              );
             },
           ),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream:
-            FirebaseFirestore.instance
-                .collection('subscriptions')
-                .where('userId', isEqualTo: currentUserId)
-                .orderBy(
-                  'nextPaymentDate',
-                  descending: false,
-                ) // Sắp xếp theo ngày đến hạn gần nhất
-                .snapshots(),
-        builder: (BuildContext context, AsyncSnapshot<QuerySnapshot> snapshot) {
-          // Xử lý các trạng thái của stream
-          if (snapshot.hasError) {
-            return Center(child: Text('Đã xảy ra lỗi: ${snapshot.error}'));
-          }
-
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.data!.docs.isEmpty) {
-            return const Center(
-              child: Text(
-                'Bạn chưa có khoản thanh toán nào.\nNhấn nút + để thêm mới!',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 16, color: Colors.grey),
-              ),
-            );
-          }
-
-          // Hiển thị danh sách nếu có dữ liệu
-          return ListView.builder(
-            padding: const EdgeInsets.all(8.0),
-            itemCount: snapshot.data!.docs.length,
-            itemBuilder: (context, index) {
-              DocumentSnapshot document = snapshot.data!.docs[index];
-              Map<String, dynamic> data =
-                  document.data()! as Map<String, dynamic>;
-
-              // Lấy và định dạng ngày tháng cho dễ đọc
-              String formattedDate = 'Chưa có ngày';
-              if (data['nextPaymentDate'] != null) {
-                DateTime nextDate =
-                    (data['nextPaymentDate'] as Timestamp).toDate();
-                formattedDate = DateFormat('dd/MM/yyyy').format(nextDate);
-              }
-
-              // Lấy và định dạng số tiền theo đơn vị tiền tệ Việt Nam
-              final currencyFormat = NumberFormat.currency(
-                locale: 'vi_VN',
-                symbol: '₫',
-              );
-              String formattedAmount = currencyFormat.format(
-                data['amount'] ?? 0,
-              );
-
-              // Xây dựng giao diện cho mỗi mục
-              return Card(
-                elevation: 3,
-                margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                    vertical: 8,
-                    horizontal: 16,
-                  ),
-                  // === PHẦN HIỂN THỊ ICON ĐÃ CẬP NHẬT ===
-                  leading: CircleAvatar(
-                    radius: 25,
-                    backgroundColor: Colors.grey.shade200,
-                    // Nếu có iconUrl hợp lệ, hiển thị ảnh từ mạng
-                    backgroundImage:
-                        (data['iconUrl'] != null && data['iconUrl'].isNotEmpty)
-                            ? NetworkImage(data['iconUrl'])
-                            : null,
-                    // Nếu không có ảnh, hiển thị icon mặc định
-                    child:
-                        (data['iconUrl'] == null || data['iconUrl'].isEmpty)
-                            ? const Icon(
-                              Icons.wallet_giftcard_rounded,
-                              color: Colors.grey,
-                            )
-                            : null,
-                  ),
-                  // =======================================
-                  title: Text(
-                    data['serviceName'] ?? 'Không có tên',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                  subtitle: Text('Đến hạn: $formattedDate'),
-                  trailing: Text(
-                    formattedAmount,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                ),
-              );
-            },
-          );
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await _checkAndUpdateExpiredPayments();
+          setState(() {}); // Gọi để stream builder reload
         },
+        child: StreamBuilder<QuerySnapshot>(
+          stream:
+              FirebaseFirestore.instance
+                  .collection('subscriptions')
+                  .where('userId', isEqualTo: currentUserId)
+                  .orderBy('nextPaymentDate', descending: false)
+                  .snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Center(child: Text('Đã xảy ra lỗi: ${snapshot.error}'));
+            }
+
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final docs = snapshot.data!.docs;
+
+            if (docs.isEmpty) {
+              return Column(
+                children: [
+                  _buildCalendar(<DateTime>{}),
+                  const Expanded(
+                    child: Center(
+                      child: Text(
+                        'Bạn chưa có khoản thanh toán nào.\nNhấn nút + để thêm mới!',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 16, color: Colors.grey),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }
+
+            final paymentDates =
+                docs
+                    .map(
+                      (doc) => (doc['nextPaymentDate'] as Timestamp?)?.toDate(),
+                    )
+                    .whereType<DateTime>()
+                    .toSet();
+
+            if (_paymentDays != paymentDates) {
+              _paymentDays = paymentDates;
+            }
+
+            return Column(
+              children: [
+                _buildCalendar(paymentDates),
+                Expanded(
+                  child: ListView.separated(
+                    padding: const EdgeInsets.all(8.0),
+                    itemCount: docs.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 6),
+                    itemBuilder: (context, index) {
+                      final document = docs[index];
+                      final data = document.data()! as Map<String, dynamic>;
+
+                      final nextDate =
+                          (data['nextPaymentDate'] as Timestamp?)?.toDate();
+                      final formattedDate =
+                          (nextDate != null)
+                              ? '${nextDate.day}/${nextDate.month}/${nextDate.year}'
+                              : 'Chưa có ngày';
+
+                      final currencyFormat = NumberFormat.currency(
+                        locale: 'vi_VN',
+                        symbol: '₫',
+                      );
+                      final formattedAmount = currencyFormat.format(
+                        data['amount'] ?? 0,
+                      );
+
+                      return Card(
+                        elevation: 3,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 8,
+                            horizontal: 16,
+                          ),
+                          leading: CircleAvatar(
+                            radius: 25,
+                            backgroundColor: Colors.grey.shade200,
+                            backgroundImage:
+                                (data['iconUrl'] != null &&
+                                        data['iconUrl'].isNotEmpty)
+                                    ? NetworkImage(data['iconUrl'])
+                                    : null,
+                            child:
+                                (data['iconUrl'] == null ||
+                                        data['iconUrl'].isEmpty)
+                                    ? const Icon(
+                                      Icons.wallet_giftcard_rounded,
+                                      color: Colors.grey,
+                                    )
+                                    : null,
+                          ),
+                          title: Text(
+                            data['serviceName'] ?? 'Không có tên',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                          subtitle: Text(
+                            'Đến hạn: $formattedDate\nSố tiền: $formattedAmount',
+                          ),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder:
+                                    (context) => SubscriptionDetailScreen(
+                                      subscriptionId: document.id,
+                                      data: data,
+                                    ),
+                              ),
+                            );
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
-      // Nút tròn để thêm mới một khoản thanh toán
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          // Điều hướng đến màn hình thêm mới khi nhấn nút
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -166,6 +260,55 @@ class _HomeScreenState extends State<HomeScreen> {
         },
         tooltip: 'Thêm mới',
         child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  Widget _buildCalendar(Set<DateTime> paymentDates) {
+    return TableCalendar(
+      firstDay: DateTime.utc(2020, 1, 1),
+      lastDay: DateTime.utc(2100, 12, 31),
+      focusedDay: _focusedDay,
+      selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+      onDaySelected: (selectedDay, focusedDay) {
+        setState(() {
+          _selectedDay = selectedDay;
+          _focusedDay = focusedDay;
+        });
+      },
+      calendarBuilders: CalendarBuilders(
+        markerBuilder: (context, date, events) {
+          final hasPayment = paymentDates.any(
+            (d) =>
+                d.year == date.year &&
+                d.month == date.month &&
+                d.day == date.day,
+          );
+          if (hasPayment) {
+            return Positioned(
+              bottom: 1,
+              child: Container(
+                width: 6,
+                height: 6,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.red,
+                ),
+              ),
+            );
+          }
+          return null;
+        },
+      ),
+      calendarStyle: const CalendarStyle(
+        markerDecoration: BoxDecoration(
+          color: Colors.red,
+          shape: BoxShape.circle,
+        ),
+      ),
+      headerStyle: const HeaderStyle(
+        formatButtonVisible: false,
+        titleCentered: true,
       ),
     );
   }
