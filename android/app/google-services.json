@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "226417939597",
+    "project_id": "quankydangky",
+    "storage_bucket": "quankydangky.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:226417939597:android:32e5881c322cff55dbfec4",
+        "android_client_info": {
+          "package_name": "com.example.kaiioi"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "226417939597-q76v0npkm6kopkibf2vpggbsq2civmk4.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCndAyO-sF3q3KPd5g9azTX-2xJ5XgzfSU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "226417939597-q76v0npkm6kopkibf2vpggbsq2civmk4.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
