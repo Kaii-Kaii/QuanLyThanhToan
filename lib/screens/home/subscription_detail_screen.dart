@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'add_subscription_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 
 class SubscriptionDetailScreen extends StatelessWidget {
   final String subscriptionId;
@@ -12,6 +13,52 @@ class SubscriptionDetailScreen extends StatelessWidget {
     required this.data,
   });
 
+  // Helper function: Trả về định dạng tiền tệ theo từng loại currency
+  String getFormattedAmount(num amount, String currency) {
+    switch (currency) {
+      case 'USD':
+        return NumberFormat.currency(locale: 'en_US', symbol: '\$').format(amount);
+      case 'EUR':
+        return NumberFormat.currency(locale: 'en_EU', symbol: '€').format(amount);
+      case 'JPY':
+        return NumberFormat.currency(locale: 'ja_JP', symbol: '¥').format(amount);
+      case 'KRW':
+        return NumberFormat.currency(locale: 'ko_KR', symbol: '₩').format(amount);
+      case 'CNY':
+        return NumberFormat.currency(locale: 'zh_CN', symbol: '¥').format(amount);
+      case 'GBP':
+        return NumberFormat.currency(locale: 'en_GB', symbol: '£').format(amount);
+      case 'SGD':
+        return NumberFormat.currency(locale: 'en_SG', symbol: r'S$').format(amount);
+      case 'THB':
+        return NumberFormat.currency(locale: 'th_TH', symbol: '฿').format(amount);
+      case 'VND':
+      default:
+        return NumberFormat.currency(locale: 'vi_VN', symbol: '₫').format(amount);
+    }
+  }
+
+  String getVietnameseCycle(String? cycle) {
+    switch (cycle) {
+      case 'monthly':
+        return 'Hàng tháng';
+      case 'yearly':
+        return 'Hàng năm';
+      default:
+        return '';
+    }
+  }
+
+  String getCurrencyShort(String? currency) {
+    if (currency == null) return '';
+    switch (currency) {
+      case 'VND':
+        return 'VNĐ';
+      default:
+        return currency;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     String formattedDate = 'Chưa có ngày';
@@ -20,16 +67,9 @@ class SubscriptionDetailScreen extends StatelessWidget {
       formattedDate = '${nextDate.day}/${nextDate.month}/${nextDate.year}';
     }
 
-    String getVietnameseCycle(String? cycle) {
-      switch (cycle) {
-        case 'monthly':
-          return 'Hàng tháng';
-        case 'yearly':
-          return 'Hàng năm';
-        default:
-          return '';
-      }
-    }
+    final amount = data['amount'] ?? 0;
+    final currency = (data['currency'] ?? 'VND').toString();
+    final formattedAmount = getFormattedAmount(amount, currency);
 
     return Scaffold(
       appBar: AppBar(
@@ -42,11 +82,10 @@ class SubscriptionDetailScreen extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder:
-                      (context) => AddSubscriptionScreen(
-                        subscriptionId: subscriptionId,
-                        initialData: data,
-                      ),
+                  builder: (context) => AddSubscriptionScreen(
+                    subscriptionId: subscriptionId,
+                    initialData: data,
+                  ),
                 ),
               );
             },
@@ -57,24 +96,23 @@ class SubscriptionDetailScreen extends StatelessWidget {
             onPressed: () async {
               final confirm = await showDialog<bool>(
                 context: context,
-                builder:
-                    (ctx) => AlertDialog(
-                      title: const Text('Xác nhận xoá'),
-                      content: const Text('Bạn có chắc muốn xoá khoản này?'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, false),
-                          child: const Text('Huỷ'),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, true),
-                          child: const Text(
-                            'Xoá',
-                            style: TextStyle(color: Colors.red),
-                          ),
-                        ),
-                      ],
+                builder: (ctx) => AlertDialog(
+                  title: const Text('Xác nhận xoá'),
+                  content: const Text('Bạn có chắc muốn xoá khoản này?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('Huỷ'),
                     ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text(
+                        'Xoá',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  ],
+                ),
               );
               if (confirm == true) {
                 await FirebaseFirestore.instance
@@ -111,7 +149,7 @@ class SubscriptionDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Số tiền: ${data['amount'] ?? 0} VNĐ',
+              'Số tiền: $formattedAmount',
               style: const TextStyle(fontSize: 18),
             ),
             const SizedBox(height: 8),

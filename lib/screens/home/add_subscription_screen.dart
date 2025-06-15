@@ -25,13 +25,27 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
 
   DateTime? _selectedDate;
   String _selectedPeriod = 'monthly';
+  String _selectedCurrency = 'VND';
   File? _imageFile;
   bool _isUploading = false;
 
-  // Thay đổi danh sách chu kỳ thanh toán sang tiếng Việt và chỉ còn 'Tháng' và 'Năm'
+  // Chu kỳ thanh toán tiếng Việt
   final List<Map<String, String>> _periods = [
     {'value': 'monthly', 'label': 'Hàng tháng'},
     {'value': 'yearly', 'label': 'Hàng năm'},
+  ];
+
+  // Các loại tiền tệ phổ biến
+  final List<Map<String, String>> _currencies = [
+    {'value': 'VND', 'label': 'VNĐ - Vietnamese Đồng'},
+    {'value': 'USD', 'label': 'USD - US Dollar'},
+    {'value': 'EUR', 'label': 'EUR - Euro'},
+    {'value': 'JPY', 'label': 'JPY - Japanese Yen'},
+    {'value': 'KRW', 'label': 'KRW - South Korean Won'},
+    {'value': 'CNY', 'label': 'CNY - Chinese Yuan'},
+    {'value': 'GBP', 'label': 'GBP - British Pound'},
+    {'value': 'SGD', 'label': 'SGD - Singapore Dollar'},
+    {'value': 'THB', 'label': 'THB - Thai Baht'},
   ];
 
   @override
@@ -51,11 +65,11 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
       _amountController.text = (data['amount']?.toString() ?? '');
       _notesController.text = data['notes'] ?? '';
       _selectedPeriod = data['paymentCycle'] ?? 'monthly';
+      _selectedCurrency = data['currency'] ?? 'VND';
       if (data['nextPaymentDate'] != null) {
         _selectedDate = (data['nextPaymentDate'] as Timestamp).toDate();
       }
       // Không load lại ảnh, chỉ hiển thị nếu có iconUrl
-      // Nếu muốn cho phép sửa ảnh, cần tải ảnh về local, hoặc chỉ hiển thị preview
     }
   }
 
@@ -100,7 +114,6 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
         maxWidth: 1024,
         maxHeight: 1024,
       );
-
       if (pickedFile != null) {
         setState(() {
           _imageFile = File(pickedFile.path);
@@ -176,7 +189,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     final subscriptionData = {
       'serviceName': _serviceNameController.text.trim(),
       'amount': double.tryParse(_amountController.text) ?? 0.0,
-      'currency': 'VND',
+      'currency': _selectedCurrency,
       'paymentCycle': _selectedPeriod,
       'nextPaymentDate':
           _selectedDate != null ? Timestamp.fromDate(_selectedDate!) : null,
@@ -309,22 +322,67 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                             : null,
               ),
               const SizedBox(height: 16),
-              TextFormField(
-                controller: _amountController,
-                decoration: const InputDecoration(
-                  labelText: 'Giá (VNĐ)',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Vui lòng nhập giá';
-                  }
-                  if (double.tryParse(value) == null) {
-                    return 'Vui lòng nhập số hợp lệ';
-                  }
-                  return null;
-                },
+              Row(
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: TextFormField(
+                      controller: _amountController,
+                      decoration: const InputDecoration(
+                        labelText: 'Giá',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Vui lòng nhập giá';
+                        }
+                        if (double.tryParse(value) == null) {
+                          return 'Vui lòng nhập số hợp lệ';
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: DropdownButtonFormField<String>(
+                      value: _selectedCurrency,
+                      decoration: const InputDecoration(
+                        labelText: 'Loại tiền tệ',
+                        border: OutlineInputBorder(),
+                      ),
+                      items:
+                          _currencies
+                              .map(
+                                (e) => DropdownMenuItem(
+                                  value: e['value'],
+                                  child: Text(e['label']!),
+                                ),
+                              )
+                              .toList(),
+                      selectedItemBuilder:
+                          (context) =>
+                              _currencies
+                                  .map(
+                                    (e) => Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        e['value']!,
+                                        style: const TextStyle(fontSize: 16),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedCurrency = value!;
+                        });
+                      },
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(

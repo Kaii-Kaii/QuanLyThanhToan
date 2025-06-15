@@ -3,8 +3,11 @@ import 'package:image_picker/image_picker.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import '../../services/auth_service.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:provider/provider.dart';
+import '../../services/theme_service.dart';
 import '../auth/change_password_screen.dart';
+import '../../services/auth_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -99,6 +102,101 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Widget _buildThemeSwitcher(BuildContext context) {
+    final themeService = Provider.of<ThemeService>(context);
+    final mode = themeService.mode;
+
+    final Map<AppThemeMode, Widget> segments = {
+      AppThemeMode.light: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.light_mode, size: 28),
+            SizedBox(height: 4),
+            Text('Sáng', style: TextStyle(fontSize: 16)),
+          ],
+        ),
+      ),
+      AppThemeMode.dark: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.dark_mode, size: 28),
+            SizedBox(height: 4),
+            Text('Tối', style: TextStyle(fontSize: 16)),
+          ],
+        ),
+      ),
+      AppThemeMode.system: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.phone_android, size: 28),
+            SizedBox(height: 4),
+            Text('Hệ thống', style: TextStyle(fontSize: 16)),
+          ],
+        ),
+      ),
+    };
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceVariant,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+        ),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.palette_rounded, size: 22),
+              SizedBox(width: 8),
+              Text(
+                'Giao diện',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final segmentWidth = (constraints.maxWidth - 8) / 3;
+                return CupertinoSlidingSegmentedControl<AppThemeMode>(
+                  groupValue: mode,
+                  children: segments.map(
+                    (key, value) => MapEntry(
+                      key,
+                      SizedBox(
+                        width: segmentWidth,
+                        child: Center(child: value),
+                      ),
+                    ),
+                  ),
+                  onValueChanged: (AppThemeMode? value) {
+                    if (value != null) {
+                      themeService.setMode(value);
+                    }
+                  },
+                  thumbColor: Theme.of(context).colorScheme.primary.withOpacity(0.22),
+                  backgroundColor: Theme.of(context).colorScheme.surface.withOpacity(0.7),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = AuthService().currentUser;
@@ -108,8 +206,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     }
     return FutureBuilder<DocumentSnapshot>(
-      future:
-          FirebaseFirestore.instance.collection('users').doc(user.uid).get(),
+      future: FirebaseFirestore.instance.collection('users').doc(user.uid).get(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return const Scaffold(
@@ -117,10 +214,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           );
         }
         final data = snapshot.data!.data() as Map<String, dynamic>? ?? {};
-        final avatar =
-            (data['avatar'] as String?)?.isNotEmpty == true
-                ? data['avatar']
-                : 'https://res.cloudinary.com/ddfzzvwvx/image/upload/v1749923335/download_iqse1o.jpg';
+        final avatar = (data['avatar'] as String?)?.isNotEmpty == true
+            ? data['avatar']
+            : 'https://res.cloudinary.com/ddfzzvwvx/image/upload/v1749923335/download_iqse1o.jpg';
         final displayName = data['displayName'] ?? '';
         final email = user.email ?? '';
 
@@ -143,14 +239,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     children: [
                       CircleAvatar(
                         radius: 80,
-                        backgroundImage:
-                            _avatarFile != null
-                                ? FileImage(_avatarFile!)
-                                : NetworkImage(avatar) as ImageProvider,
-                        child:
-                            _isUploadingAvatar
-                                ? const CircularProgressIndicator()
-                                : null,
+                        backgroundImage: _avatarFile != null
+                            ? FileImage(_avatarFile!)
+                            : NetworkImage(avatar) as ImageProvider,
+                        child: _isUploadingAvatar
+                            ? const CircularProgressIndicator()
+                            : null,
                       ),
                       if (_isEditing)
                         Positioned(
@@ -183,72 +277,76 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const SizedBox(height: 24),
                 _isEditing
                     ? Column(
-                      children: [
-                        TextField(
-                          controller: _displayNameController,
-                          decoration: const InputDecoration(
-                            labelText: 'Tên hiển thị',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        _isLoading
-                            ? const CircularProgressIndicator()
-                            : Row(
-                              children: [
-                                Expanded(
-                                  child: ElevatedButton(
-                                    onPressed: () => _updateProfile(user.uid),
-                                    child: const Text('Lưu'),
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: OutlinedButton(
-                                    onPressed: () {
-                                      setState(() => _isEditing = false);
-                                    },
-                                    child: const Text('Hủy'),
-                                  ),
-                                ),
-                              ],
+                        children: [
+                          TextField(
+                            controller: _displayNameController,
+                            decoration: const InputDecoration(
+                              labelText: 'Tên hiển thị',
+                              border: OutlineInputBorder(),
                             ),
-                      ],
-                    )
+                          ),
+                          const SizedBox(height: 16),
+                          _isLoading
+                              ? const CircularProgressIndicator()
+                              : Row(
+                                  children: [
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: () => _updateProfile(user.uid),
+                                        child: const Text('Lưu'),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: OutlinedButton(
+                                        onPressed: () {
+                                          setState(() => _isEditing = false);
+                                        },
+                                        child: const Text('Hủy'),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                        ],
+                      )
                     : Column(
-                      children: [
-                        Center(
-                          child: Text(
-                            displayName.isNotEmpty
-                                ? displayName
-                                : 'Chưa có tên hiển thị',
-                            style: const TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
+                        children: [
+                          Center(
+                            child: Text(
+                              displayName.isNotEmpty
+                                  ? displayName
+                                  : 'Chưa có tên hiển thị',
+                              style: const TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 12),
-                        Center(
-                          child: Text(
-                            email,
-                            style: const TextStyle(fontSize: 20),
+                          const SizedBox(height: 12),
+                          Center(
+                            child: Text(
+                              email,
+                              style: const TextStyle(fontSize: 20),
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            icon: const Icon(Icons.edit),
-                            label: const Text('Chỉnh sửa thông tin'),
-                            onPressed: () {
-                              setState(() => _isEditing = true);
-                            },
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.edit),
+                              label: const Text('Chỉnh sửa thông tin'),
+                              onPressed: () {
+                                setState(() => _isEditing = true);
+                              },
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
                 const SizedBox(height: 40),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 24.0),
+                  child: _buildThemeSwitcher(context),
+                ),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
