@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
@@ -15,6 +18,49 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isEditing = false;
   bool _isLoading = false;
 
+  File? _avatarFile;
+  bool _isUploadingAvatar = false;
+
+  Future<void> _pickAvatar() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+      maxWidth: 512,
+      maxHeight: 512,
+    );
+    if (pickedFile != null) {
+      setState(() {
+        _avatarFile = File(pickedFile.path);
+      });
+    }
+  }
+
+  Future<String?> _uploadAvatar(File image) async {
+    setState(() => _isUploadingAvatar = true);
+    try {
+      final cloudinary = CloudinaryPublic(
+        'ddfzzvwvx',
+        'flutter_uploads',
+        cache: false,
+      );
+      final response = await cloudinary.uploadFile(
+        CloudinaryFile.fromFile(
+          image.path,
+          resourceType: CloudinaryResourceType.Image,
+        ),
+      );
+      return response.secureUrl;
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Lỗi upload ảnh: $e')));
+      return null;
+    } finally {
+      setState(() => _isUploadingAvatar = false);
+    }
+  }
+
   @override
   void dispose() {
     _displayNameController.dispose();
@@ -24,10 +70,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _updateProfile(String uid) async {
     setState(() => _isLoading = true);
     try {
-      await FirebaseFirestore.instance.collection('users').doc(uid).update({
-        'displayName': _displayNameController.text.trim(),
+      String? avatarUrl;
+      if (_avatarFile != null) {
+        avatarUrl = await _uploadAvatar(_avatarFile!);
+        if (avatarUrl == null) throw Exception('Không upload được ảnh');
+      }
+      final updateData = {'displayName': _displayNameController.text.trim()};
+      if (avatarUrl != null) {
+        updateData['avatar'] = avatarUrl;
+      }
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .update(updateData);
+      setState(() {
+        _isEditing = false;
+        _avatarFile = null;
       });
-      setState(() => _isEditing = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Cập nhật thông tin thành công')),
       );
@@ -79,9 +138,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
               children: [
                 const SizedBox(height: 32),
                 Center(
-                  child: CircleAvatar(
-                    radius: 80,
-                    backgroundImage: NetworkImage(avatar),
+                  child: Stack(
+                    alignment: Alignment.bottomRight,
+                    children: [
+                      CircleAvatar(
+                        radius: 80,
+                        backgroundImage:
+                            _avatarFile != null
+                                ? FileImage(_avatarFile!)
+                                : NetworkImage(avatar) as ImageProvider,
+                        child:
+                            _isUploadingAvatar
+                                ? const CircularProgressIndicator()
+                                : null,
+                      ),
+                      if (_isEditing)
+                        Positioned(
+                          bottom: 8,
+                          right: 8,
+                          child: InkWell(
+                            onTap: _isUploadingAvatar ? null : _pickAvatar,
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.2),
+                                    blurRadius: 4,
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.camera_alt,
+                                color: Colors.blue,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 24),

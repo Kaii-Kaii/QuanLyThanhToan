@@ -20,6 +20,17 @@ class SubscriptionDetailScreen extends StatelessWidget {
       formattedDate = '${nextDate.day}/${nextDate.month}/${nextDate.year}';
     }
 
+    String getVietnameseCycle(String? cycle) {
+      switch (cycle) {
+        case 'monthly':
+          return 'Hàng tháng';
+        case 'yearly':
+          return 'Hàng năm';
+        default:
+          return '';
+      }
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Chi tiết khoản thanh toán'),
@@ -105,7 +116,7 @@ class SubscriptionDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Chu kỳ: ${data['paymentCycle'] ?? ''}',
+              'Chu kỳ: ${getVietnameseCycle(data['paymentCycle'])}',
               style: const TextStyle(fontSize: 18),
             ),
             const SizedBox(height: 8),

@@ -32,11 +32,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final currentUserId = _authService.currentUser?.uid;
     if (currentUserId == null) return;
 
-    final snapshot =
-        await FirebaseFirestore.instance
-            .collection('subscriptions')
-            .where('userId', isEqualTo: currentUserId)
-            .get();
+    final snapshot = await FirebaseFirestore.instance
+        .collection('subscriptions')
+        .where('userId', isEqualTo: currentUserId)
+        .get();
 
     for (var doc in snapshot.docs) {
       final data = doc.data();
@@ -111,143 +110,251 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          await _checkAndUpdateExpiredPayments();
-          setState(() {}); // Gọi để stream builder reload
-        },
-        child: StreamBuilder<QuerySnapshot>(
-          stream:
-              FirebaseFirestore.instance
+      body: FutureBuilder<DocumentSnapshot>(
+        future: FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUserId)
+            .get(),
+        builder: (context, userSnapshot) {
+          if (userSnapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final userData =
+              userSnapshot.data?.data() as Map<String, dynamic>? ?? {};
+          final displayName = userData['displayName'] ?? '';
+
+          return RefreshIndicator(
+            onRefresh: () async {
+              await _checkAndUpdateExpiredPayments();
+              setState(() {});
+            },
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
                   .collection('subscriptions')
                   .where('userId', isEqualTo: currentUserId)
                   .orderBy('nextPaymentDate', descending: false)
                   .snapshots(),
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return Center(child: Text('Đã xảy ra lỗi: ${snapshot.error}'));
-            }
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Text('Đã xảy ra lỗi: ${snapshot.error}'),
+                  );
+                }
 
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-            final docs = snapshot.data!.docs;
+                final docs = snapshot.data!.docs;
 
-            if (docs.isEmpty) {
-              return Column(
-                children: [
-                  _buildCalendar(<DateTime>{}),
-                  const Expanded(
-                    child: Center(
-                      child: Text(
-                        'Bạn chưa có khoản thanh toán nào.\nNhấn nút + để thêm mới!',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 16, color: Colors.grey),
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            }
-
-            final paymentDates =
-                docs
-                    .map(
-                      (doc) => (doc['nextPaymentDate'] as Timestamp?)?.toDate(),
-                    )
+                final paymentDates = docs
+                    .map((doc) =>
+                        (doc['nextPaymentDate'] as Timestamp?)?.toDate())
                     .whereType<DateTime>()
                     .toSet();
 
-            if (_paymentDays != paymentDates) {
-              _paymentDays = paymentDates;
-            }
+                if (_paymentDays != paymentDates) {
+                  _paymentDays = paymentDates;
+                }
 
-            return Column(
-              children: [
-                _buildCalendar(paymentDates),
-                Expanded(
-                  child: ListView.separated(
-                    padding: const EdgeInsets.all(8.0),
-                    itemCount: docs.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 6),
-                    itemBuilder: (context, index) {
-                      final document = docs[index];
-                      final data = document.data()! as Map<String, dynamic>;
+                if (docs.isEmpty) {
+                  return Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 16, bottom: 8),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Xin chào${displayName.isNotEmpty ? ', $displayName' : ''}!',
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                      _buildCalendar(<DateTime>{}),
+                      const Expanded(
+                        child: Center(
+                          child: Text(
+                            'Bạn chưa có khoản thanh toán nào.\nNhấn nút + để thêm mới!',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 16, color: Colors.grey),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }
 
-                      final nextDate =
-                          (data['nextPaymentDate'] as Timestamp?)?.toDate();
-                      final formattedDate =
-                          (nextDate != null)
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(
+                          top: 16, bottom: 8, left: 16, right: 16),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Xin chào${displayName.isNotEmpty ? ', $displayName' : ''}!',
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                    _buildCalendar(paymentDates),
+                    Expanded(
+                      child: ListView.separated(
+                        padding: const EdgeInsets.all(16.0),
+                        itemCount: docs.length,
+                        separatorBuilder: (_, __) =>
+                            const SizedBox(height: 12),
+                        itemBuilder: (context, index) {
+                          final document = docs[index];
+                          final data =
+                              document.data()! as Map<String, dynamic>;
+
+                          final nextDate = (data['nextPaymentDate']
+                                  as Timestamp?)
+                              ?.toDate();
+                          final formattedDate = (nextDate != null)
                               ? '${nextDate.day}/${nextDate.month}/${nextDate.year}'
                               : 'Chưa có ngày';
 
-                      final currencyFormat = NumberFormat.currency(
-                        locale: 'vi_VN',
-                        symbol: '₫',
-                      );
-                      final formattedAmount = currencyFormat.format(
-                        data['amount'] ?? 0,
-                      );
+                          final currencyFormat = NumberFormat.currency(
+                            locale: 'vi_VN',
+                            symbol: '₫',
+                          );
+                          final formattedAmount = currencyFormat
+                              .format(data['amount'] ?? 0);
 
-                      return Card(
-                        elevation: 3,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 8,
-                            horizontal: 16,
-                          ),
-                          leading: CircleAvatar(
-                            radius: 25,
-                            backgroundColor: Colors.grey.shade200,
-                            backgroundImage:
-                                (data['iconUrl'] != null &&
-                                        data['iconUrl'].isNotEmpty)
-                                    ? NetworkImage(data['iconUrl'])
-                                    : null,
-                            child:
-                                (data['iconUrl'] == null ||
-                                        data['iconUrl'].isEmpty)
-                                    ? const Icon(
-                                      Icons.wallet_giftcard_rounded,
-                                      color: Colors.grey,
-                                    )
-                                    : null,
-                          ),
-                          title: Text(
-                            data['serviceName'] ?? 'Không có tên',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                          subtitle: Text(
-                            'Đến hạn: $formattedDate\nSố tiền: $formattedAmount',
-                          ),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder:
-                                    (context) => SubscriptionDetailScreen(
-                                      subscriptionId: document.id,
-                                      data: data,
-                                    ),
+                          return Dismissible(
+                            key: Key(document.id),
+                            direction: DismissDirection.endToStart,
+                            background: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 6),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  alignment: Alignment.centerRight,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 20),
+                                  color: Colors.red,
+                                  child: const Icon(
+                                    Icons.delete,
+                                    color: Colors.white,
+                                    size: 28,
+                                  ),
+                                ),
                               ),
-                            );
-                          },
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
+                            ),
+                            confirmDismiss: (direction) async {
+                              return await showDialog<bool>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('Xác nhận xóa'),
+                                  content: Text(
+                                    'Bạn có chắc chắn muốn xóa "${data['serviceName'] ?? 'Không có tên'}"?',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.of(context).pop(false),
+                                      child: const Text('Hủy'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.of(context).pop(true),
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: Colors.red,
+                                      ),
+                                      child: const Text('Xóa'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                            onDismissed: (_) async {
+                              await FirebaseFirestore.instance
+                                  .collection('subscriptions')
+                                  .doc(document.id)
+                                  .delete();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Đã xóa "${data['serviceName'] ?? 'Không có tên'}"',
+                                  ),
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            },
+                            child: Material(
+                              elevation: 3,
+                              borderRadius: BorderRadius.circular(12),
+                              color: Colors.white,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          SubscriptionDetailScreen(
+                                        subscriptionId: document.id,
+                                        data: data,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                child: ListTile(
+                                  contentPadding:
+                                      const EdgeInsets.symmetric(
+                                    vertical: 8,
+                                    horizontal: 16,
+                                  ),
+                                  leading: CircleAvatar(
+                                    radius: 25,
+                                    backgroundColor:
+                                        Colors.grey.shade200,
+                                    backgroundImage:
+                                        (data['iconUrl'] != null &&
+                                                data['iconUrl'].isNotEmpty)
+                                            ? NetworkImage(
+                                                data['iconUrl'])
+                                            : null,
+                                    child: (data['iconUrl'] == null ||
+                                            data['iconUrl'].isEmpty)
+                                        ? const Icon(
+                                            Icons.wallet_giftcard_rounded,
+                                            color: Colors.grey,
+                                          )
+                                        : null,
+                                  ),
+                                  title: Text(
+                                    data['serviceName'] ?? 'Không có tên',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    'Đến hạn: $formattedDate\nSố tiền: $formattedAmount',
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          );
+        },
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
@@ -277,13 +384,11 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       },
       calendarBuilders: CalendarBuilders(
-        markerBuilder: (context, date, events) {
-          final hasPayment = paymentDates.any(
-            (d) =>
-                d.year == date.year &&
-                d.month == date.month &&
-                d.day == date.day,
-          );
+        markerBuilder: (context, date, _) {
+          final hasPayment = paymentDates.any((d) =>
+              d.year == date.year &&
+              d.month == date.month &&
+              d.day == date.day);
           if (hasPayment) {
             return Positioned(
               bottom: 1,

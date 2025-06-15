@@ -28,7 +28,11 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
   File? _imageFile;
   bool _isUploading = false;
 
-  final List<String> _periods = ['weekly', 'monthly', 'yearly'];
+  // Thay đổi danh sách chu kỳ thanh toán sang tiếng Việt và chỉ còn 'Tháng' và 'Năm'
+  final List<Map<String, String>> _periods = [
+    {'value': 'monthly', 'label': 'Hàng tháng'},
+    {'value': 'yearly', 'label': 'Hàng năm'},
+  ];
 
   @override
   void dispose() {
@@ -230,7 +234,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Thêm Subscription'),
+        title: const Text('Thêm đăng ký'),
         actions: [
           if (_isUploading)
             const Padding(
@@ -313,10 +317,12 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                 ),
                 keyboardType: TextInputType.number,
                 validator: (value) {
-                  if (value == null || value.isEmpty)
+                  if (value == null || value.isEmpty) {
                     return 'Vui lòng nhập giá';
-                  if (double.tryParse(value) == null)
+                  }
+                  if (double.tryParse(value) == null) {
                     return 'Vui lòng nhập số hợp lệ';
+                  }
                   return null;
                 },
               ),
@@ -329,7 +335,12 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                 ),
                 items:
                     _periods
-                        .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                        .map(
+                          (e) => DropdownMenuItem(
+                            value: e['value'],
+                            child: Text(e['label']!),
+                          ),
+                        )
                         .toList(),
                 onChanged: (value) {
                   setState(() {
@@ -366,10 +377,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                 onPressed: _saveSubscription,
                 child: const Padding(
                   padding: EdgeInsets.symmetric(vertical: 14),
-                  child: Text(
-                    'Lưu Subscription',
-                    style: TextStyle(fontSize: 16),
-                  ),
+                  child: Text('Lưu đăng ký', style: TextStyle(fontSize: 16)),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.blue,
