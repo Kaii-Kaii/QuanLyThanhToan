@@ -15,42 +15,87 @@ class PaymentJarTab extends StatelessWidget {
     required this.theme,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot>(
-      stream:
-          FirebaseFirestore.instance
-              .collection('subscriptions')
-              .where('userId', isEqualTo: currentUserId)
-              .orderBy('nextPaymentDate', descending: false)
-              .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(child: Text('Đã xảy ra lỗi: ${snapshot.error}'));
-        }
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final docs = snapshot.data!.docs;
+  Widget _buildWelcomeSection() {
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
 
-        // Thay đổi từ 7 thành 10 quả bóng tối đa
-        final List<QueryDocumentSnapshot> soonestPayments =
-            docs.length > 10 ? docs.sublist(0, 10) : docs;
-
-        if (soonestPayments.isEmpty) {
-          return _buildEmptyJar();
-        }
-
-        return _buildJarWithBalls(context, soonestPayments, docs);
-      },
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            colorScheme.primary.withOpacity(0.1),
+            colorScheme.primary.withOpacity(0.05),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: colorScheme.outline.withOpacity(0.2),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.primary.withOpacity(0.1),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: colorScheme.primary.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(Icons.waving_hand, color: Colors.amber, size: 24),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      displayName.isNotEmpty
+                          ? 'Xin chào, $displayName!'
+                          : 'Xin chào!',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Quản lý thanh toán thông minh',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: colorScheme.onSurface.withOpacity(0.7),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildJarWithBalls(
+  Widget _buildJarSection(
     BuildContext context,
     List<QueryDocumentSnapshot> soonestPayments,
     List<QueryDocumentSnapshot> allDocs,
   ) {
+    final colorScheme = theme.colorScheme;
+
     List<Widget> balls = List.generate(soonestPayments.length, (index) {
       final document = soonestPayments[index];
       final data = document.data()! as Map<String, dynamic>;
@@ -81,22 +126,22 @@ class PaymentJarTab extends StatelessWidget {
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.3),
-                  blurRadius: 8,
+                  color: colorScheme.primary.withOpacity(0.3),
+                  blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
               ],
             ),
             child: CircleAvatar(
               radius: 30,
-              backgroundColor: theme.colorScheme.surface,
+              backgroundColor: colorScheme.surface,
               backgroundImage:
                   (iconUrl.isNotEmpty) ? NetworkImage(iconUrl) : null,
               child:
                   (iconUrl.isEmpty)
                       ? Icon(
                         Icons.wallet_giftcard_rounded,
-                        color: theme.colorScheme.primary,
+                        color: colorScheme.primary,
                         size: 32,
                       )
                       : null,
@@ -106,189 +151,302 @@ class PaymentJarTab extends StatelessWidget {
       );
     });
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 16, bottom: 12),
-              child: Text(
-                'Xin chào${displayName.isNotEmpty ? ', $displayName' : ''}!',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: theme.colorScheme.primary,
+    return Column(
+      children: [
+        // Header với thống kê
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceVariant.withOpacity(0.5),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: colorScheme.outline.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Lọ Thanh Toán',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Các khoản thanh toán sắp tới',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: colorScheme.onSurface.withOpacity(0.7),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Lọ Thanh Toán',
-              style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.bold,
-                color: theme.colorScheme.primary,
-                letterSpacing: 1.2,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                '${soonestPayments.length} khoản sắp tới',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: theme.colorScheme.onPrimaryContainer,
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
                 ),
-              ),
-            ),
-            const SizedBox(height: 25),
-            // Bỏ Container bao ngoài với nền trắng - chỉ để shadow
-            Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 15,
-                    offset: const Offset(0, 8),
+                decoration: BoxDecoration(
+                  color: colorScheme.primary,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: colorScheme.primary.withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  '${soonestPayments.length}/10',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.onPrimary,
                   ),
-                ],
+                ),
               ),
-              child: PaymentJarWidget(balls: balls, width: 280, height: 400),
-            ),
-            const SizedBox(height: 25),
-            // Cập nhật thông báo số khoản khác
-            if (allDocs.length > 10)
-              _buildMorePaymentsIndicator(allDocs.length),
-            const SizedBox(height: 40),
-          ],
+            ],
+          ),
         ),
-      ),
-    );
-  }
 
-  Widget _buildEmptyJar() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 16, bottom: 20),
-              child: Text(
-                'Xin chào${displayName.isNotEmpty ? ', $displayName' : ''}!',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: theme.colorScheme.primary,
-                ),
+        const SizedBox(height: 24),
+
+        // Jar Widget với design mới
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
               ),
-            ),
-            const SizedBox(height: 20),
-            // Chỉ thêm shadow, không có nền màu
-            Container(
-              width: 220,
-              height: 320,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 10,
-                    offset: const Offset(0, 5),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: Image.asset(
-                  'lib/assets/image.png',
-                  fit: BoxFit.contain,
-                  filterQuality: FilterQuality.high,
-                  // Thêm color filter chỉ cho chế độ tối
-                  color:
-                      theme.brightness == Brightness.dark
-                          ? Colors.white.withOpacity(0.8)
-                          : null,
-                  colorBlendMode:
-                      theme.brightness == Brightness.dark
-                          ? BlendMode.modulate
-                          : null,
-                ),
-              ),
-            ),
-            const SizedBox(height: 30),
-            Text(
-              'Lọ thanh toán đang trống!',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: theme.colorScheme.primary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Thêm khoản thanh toán đầu tiên của bạn\nbằng nút + bên dưới',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 16,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 40),
-          ],
+            ],
+          ),
+          child: PaymentJarWidget(balls: balls, width: 300, height: 420),
         ),
-      ),
+
+        const SizedBox(height: 24),
+
+        // More payments indicator
+        if (allDocs.length > 10) _buildMorePaymentsIndicator(allDocs.length),
+      ],
     );
   }
 
   Widget _buildMorePaymentsIndicator(int totalCount) {
+    final colorScheme = theme.colorScheme;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      margin: const EdgeInsets.symmetric(horizontal: 20),
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            theme.colorScheme.surfaceVariant.withOpacity(0.3),
-            theme.colorScheme.surfaceVariant.withOpacity(0.1),
+            colorScheme.surfaceVariant.withOpacity(0.3),
+            colorScheme.surfaceVariant.withOpacity(0.1),
           ],
         ),
-        borderRadius: BorderRadius.circular(25),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: theme.colorScheme.outline.withOpacity(0.2),
+          color: colorScheme.outline.withOpacity(0.2),
           width: 1,
         ),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.more_horiz,
-            size: 18,
-            color: theme.colorScheme.onSurfaceVariant,
+          Icon(Icons.more_horiz, size: 20, color: colorScheme.primary),
+          const SizedBox(width: 12),
+          Text(
+            '+ ${totalCount - 10} khoản khác',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onSurface,
+            ),
           ),
           const SizedBox(width: 8),
-          Text(
-            '+ ${totalCount - 10} khoản khác', // Thay đổi từ 7 thành 10
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: theme.colorScheme.onSurfaceVariant,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: colorScheme.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              'Xem thêm ở tab Danh sách',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: colorScheme.primary,
+              ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      child: Column(  
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _buildWelcomeSection(),
+
+          const SizedBox(height: 40),
+
+          // Empty jar với design đồng nhất
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: PaymentJarWidget(
+              balls: const [],
+              width: 300,
+              height: 420,
+            ), // Sử dụng PaymentJarWidget thay vì tự tạo
+          ),
+
+          const SizedBox(height: 32),
+
+          // Empty state message
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceVariant.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: colorScheme.outline.withOpacity(0.2),
+                width: 1,
+              ),
+            ),
+            child: Column(
+              children: [
+                Icon(
+                  Icons.inbox_outlined,
+                  size: 48,
+                  color: colorScheme.primary,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Lọ thanh toán đang trống!',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.onSurface,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Thêm khoản thanh toán đầu tiên của bạn\nbằng nút "Thêm mới" bên dưới',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: colorScheme.onSurface.withOpacity(0.7),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 40),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream:
+          FirebaseFirestore.instance
+              .collection('subscriptions')
+              .where('userId', isEqualTo: currentUserId)
+              .orderBy('nextPaymentDate', descending: false)
+              .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.error_outline,
+                  size: 64,
+                  color: theme.colorScheme.error,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Đã xảy ra lỗi',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${snapshot.error}',
+                  style: TextStyle(
+                    color: theme.colorScheme.onSurface.withOpacity(0.7),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          );
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(
+            child: CircularProgressIndicator(color: theme.colorScheme.primary),
+          );
+        }
+
+        final docs = snapshot.data!.docs;
+        final List<QueryDocumentSnapshot> soonestPayments =
+            docs.length > 10 ? docs.sublist(0, 10) : docs;
+
+        if (soonestPayments.isEmpty) {
+          return SingleChildScrollView(child: _buildEmptyState());
+        }
+
+        return SingleChildScrollView(
+          child: Column(
+            children: [
+              _buildWelcomeSection(),
+              const SizedBox(height: 16),
+              _buildJarSection(context, soonestPayments, docs),
+              const SizedBox(height: 40),
+            ],
+          ),
+        );
+      },
     );
   }
 }

@@ -21,6 +21,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _isLoading = false;
   bool _obscurePassword = true;
+  String? _loginError; // Thêm biến lưu lỗi đăng nhập
 
   void _setLoading(bool loading) {
     setState(() {
@@ -29,6 +30,11 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
+    // Reset lỗi trước khi đăng nhập
+    setState(() {
+      _loginError = null;
+    });
+
     if (!_formKey.currentState!.validate() || _isLoading) return;
 
     _setLoading(true);
@@ -38,16 +44,31 @@ class _LoginScreenState extends State<LoginScreen> {
         password: _passwordController.text.trim(),
       );
     } on FirebaseAuthException catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Đăng nhập thất bại: ${e.message}'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-      );
+      setState(() {
+        // Hiển thị lỗi dưới ô input
+        switch (e.code) {
+          case 'user-not-found':
+            _loginError = 'Không tìm thấy tài khoản với email này';
+            break;
+          case 'wrong-password':
+            _loginError = 'Sai tài khoản hoặc mật khẩu';
+            break;
+          case 'invalid-email':
+            _loginError = 'Email không hợp lệ';
+            break;
+          case 'user-disabled':
+            _loginError = 'Tài khoản đã bị vô hiệu hóa';
+            break;
+          case 'too-many-requests':
+            _loginError = 'Quá nhiều lần thử. Vui lòng thử lại sau';
+            break;
+          case 'invalid-credential':
+            _loginError = 'Sai tài khoản hoặc mật khẩu';
+            break;
+          default:
+            _loginError = 'Đăng nhập thất bại. Vui lòng thử lại';
+        }
+      });
     } finally {
       _setLoading(false);
     }
@@ -113,6 +134,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   TextFormField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
+                    textCapitalization: TextCapitalization.none,
+                    autocorrect: false, // Thêm dòng này
+                    enableSuggestions: false, // Thêm dòng này
                     validator: (value) {
                       if (value == null || value.isEmpty) {
                         return 'Vui lòng nhập email';
@@ -132,7 +156,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     decoration: InputDecoration(
                       labelText: 'Email',
                       labelStyle: TextStyle(
-                        color: colorScheme.onSurface.withOpacity(0.7),
+                        color:
+                            _loginError != null
+                                ? colorScheme.error
+                                : colorScheme.onSurface.withOpacity(0.7),
                         fontSize: 16,
                       ),
                       hintText: 'Nhập email của bạn',
@@ -142,26 +169,38 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       prefixIcon: Icon(
                         Icons.email_outlined,
-                        color: colorScheme.onSurface.withOpacity(0.7),
+                        color:
+                            _loginError != null
+                                ? colorScheme.error
+                                : colorScheme.onSurface.withOpacity(0.7),
                       ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide(
-                          color: colorScheme.outline,
+                          color:
+                              _loginError != null
+                                  ? colorScheme.error
+                                  : colorScheme.outline,
                           width: 1.5,
                         ),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide(
-                          color: colorScheme.outline,
+                          color:
+                              _loginError != null
+                                  ? colorScheme.error
+                                  : colorScheme.outline,
                           width: 1.5,
                         ),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide(
-                          color: colorScheme.primary,
+                          color:
+                              _loginError != null
+                                  ? colorScheme.error
+                                  : colorScheme.primary,
                           width: 2.5,
                         ),
                       ),
@@ -200,9 +239,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       if (value == null || value.isEmpty) {
                         return 'Vui lòng nhập mật khẩu';
                       }
-                      if (value.length < 6) {
-                        return 'Mật khẩu phải có ít nhất 6 ký tự';
-                      }
+                      // Bỏ validation độ dài mật khẩu cho đăng nhập
                       return null;
                     },
                     style: TextStyle(
@@ -213,7 +250,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     decoration: InputDecoration(
                       labelText: 'Mật khẩu',
                       labelStyle: TextStyle(
-                        color: colorScheme.onSurface.withOpacity(0.7),
+                        color:
+                            _loginError != null
+                                ? colorScheme.error
+                                : colorScheme.onSurface.withOpacity(0.7),
                         fontSize: 16,
                       ),
                       hintText: 'Nhập mật khẩu của bạn',
@@ -223,7 +263,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       prefixIcon: Icon(
                         Icons.lock_outline,
-                        color: colorScheme.onSurface.withOpacity(0.7),
+                        color:
+                            _loginError != null
+                                ? colorScheme.error
+                                : colorScheme.onSurface.withOpacity(0.7),
                       ),
                       suffixIcon: IconButton(
                         icon: Icon(
@@ -241,21 +284,30 @@ class _LoginScreenState extends State<LoginScreen> {
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide(
-                          color: colorScheme.outline,
+                          color:
+                              _loginError != null
+                                  ? colorScheme.error
+                                  : colorScheme.outline,
                           width: 1.5,
                         ),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide(
-                          color: colorScheme.outline,
+                          color:
+                              _loginError != null
+                                  ? colorScheme.error
+                                  : colorScheme.outline,
                           width: 1.5,
                         ),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide(
-                          color: colorScheme.primary,
+                          color:
+                              _loginError != null
+                                  ? colorScheme.error
+                                  : colorScheme.primary,
                           width: 2.5,
                         ),
                       ),
@@ -284,6 +336,24 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   ),
+
+                  // Hiển thị lỗi đăng nhập
+                  if (_loginError != null) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(
+                        _loginError!,
+                        style: TextStyle(
+                          color: colorScheme.error,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+
                   const SizedBox(height: 24),
 
                   // Forgot Password
