@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/auth_service.dart';
+import '../../utils/notification_helper.dart';
 
 class AddSubscriptionScreen extends StatefulWidget {
   final String? subscriptionId;
@@ -29,13 +30,11 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
   File? _imageFile;
   bool _isUploading = false;
 
-  // Chu kỳ thanh toán tiếng Việt
   final List<Map<String, String>> _periods = [
     {'value': 'monthly', 'label': 'Hàng tháng'},
     {'value': 'yearly', 'label': 'Hàng năm'},
   ];
 
-  // Các loại tiền tệ phổ biến
   final List<Map<String, String>> _currencies = [
     {'value': 'VND', 'label': 'VNĐ - Vietnamese Đồng'},
     {'value': 'USD', 'label': 'USD - US Dollar'},
@@ -69,7 +68,6 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
       if (data['nextPaymentDate'] != null) {
         _selectedDate = (data['nextPaymentDate'] as Timestamp).toDate();
       }
-      // Không load lại ảnh, chỉ hiển thị nếu có iconUrl
     }
   }
 
@@ -200,19 +198,23 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     };
 
     try {
+      DocumentReference? ref;
       if (widget.subscriptionId != null) {
         // Update
         await FirebaseFirestore.instance
             .collection('subscriptions')
             .doc(widget.subscriptionId)
             .update(subscriptionData);
+        ref = FirebaseFirestore.instance
+            .collection('subscriptions')
+            .doc(widget.subscriptionId);
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Đã cập nhật thành công!')),
         );
       } else {
         // Add mới
-        await FirebaseFirestore.instance
+        ref = await FirebaseFirestore.instance
             .collection('subscriptions')
             .add(subscriptionData);
         if (!mounted) return;
@@ -220,6 +222,39 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
           context,
         ).showSnackBar(const SnackBar(content: Text('Đã thêm thành công!')));
       }
+
+      // --- Schedule notification ---
+      if (_selectedDate != null && ref != null) {
+        final now = DateTime.now();
+        final tomorrow = DateTime(now.year, now.month, now.day + 1);
+        final isTomorrow =
+            _selectedDate!.year == tomorrow.year &&
+            _selectedDate!.month == tomorrow.month &&
+            _selectedDate!.day == tomorrow.day;
+
+        if (isTomorrow) {
+          await NotificationHelper.showNow(
+            id: ref.hashCode,
+            title: 'Sắp đến hạn thanh toán!',
+            body:
+                'Bạn có khoản thanh toán "${_serviceNameController.text}" vào ngày ${DateFormat('dd/MM/yyyy').format(_selectedDate!)}.',
+          );
+        } else {
+          final scheduledDate = _selectedDate!.subtract(
+            const Duration(days: 1),
+          );
+          if (scheduledDate.isAfter(now)) {
+            await NotificationHelper.scheduleNotification(
+              id: ref.hashCode,
+              title: 'Sắp đến hạn thanh toán!',
+              body:
+                  'Bạn có khoản thanh toán "${_serviceNameController.text}" vào ngày ${DateFormat('dd/MM/yyyy').format(_selectedDate!)}.',
+              scheduledDate: scheduledDate,
+            );
+          }
+        }
+      }
+
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;

@@ -6,6 +6,7 @@ import '../../services/auth_service.dart';
 import 'add_subscription_screen.dart';
 import 'subscription_detail_screen.dart';
 import '../profile/profile_screen.dart';
+import '../../utils/notification_helper.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -31,14 +32,16 @@ class _HomeScreenState extends State<HomeScreen> {
     final currentUserId = _authService.currentUser?.uid;
     if (currentUserId == null) return;
 
-    final snapshot = await FirebaseFirestore.instance
-        .collection('subscriptions')
-        .where('userId', isEqualTo: currentUserId)
-        .get();
+    final snapshot =
+        await FirebaseFirestore.instance
+            .collection('subscriptions')
+            .where('userId', isEqualTo: currentUserId)
+            .get();
 
     for (var doc in snapshot.docs) {
       final data = doc.data();
       await _updateNextPaymentDateIfNeeded(doc, data);
+      // Đã loại bỏ hoàn toàn phần gửi thông báo ở đây
     }
   }
 
@@ -78,18 +81,28 @@ class _HomeScreenState extends State<HomeScreen> {
           .collection('subscriptions')
           .doc(document.id)
           .update({'nextPaymentDate': Timestamp.fromDate(updatedDate)});
+
+      // Lên lịch notification cho kỳ tiếp theo:
+      await NotificationHelper.scheduleNotification(
+        id: document.id.hashCode,
+        title: 'Sắp đến hạn thanh toán!',
+        body:
+            'Bạn có khoản thanh toán "${data['serviceName']}" vào ngày ${DateFormat('dd/MM/yyyy').format(updatedDate)}.',
+        scheduledDate: updatedDate.subtract(const Duration(days: 1)),
+      );
     }
   }
 
   void _showPaymentsForDay(DateTime day, List<QueryDocumentSnapshot> allDocs) {
-    final filtered = allDocs.where((doc) {
-      final data = doc.data()! as Map<String, dynamic>;
-      final nextDate = (data['nextPaymentDate'] as Timestamp?)?.toDate();
-      return nextDate != null &&
-          nextDate.year == day.year &&
-          nextDate.month == day.month &&
-          nextDate.day == day.day;
-    }).toList();
+    final filtered =
+        allDocs.where((doc) {
+          final data = doc.data()! as Map<String, dynamic>;
+          final nextDate = (data['nextPaymentDate'] as Timestamp?)?.toDate();
+          return nextDate != null &&
+              nextDate.year == day.year &&
+              nextDate.month == day.month &&
+              nextDate.day == day.day;
+        }).toList();
 
     setState(() {
       _selectedDay = day;
@@ -101,24 +114,51 @@ class _HomeScreenState extends State<HomeScreen> {
   String getFormattedAmount(num amount, String currency) {
     switch (currency) {
       case 'USD':
-        return NumberFormat.currency(locale: 'en_US', symbol: '\$').format(amount);
+        return NumberFormat.currency(
+          locale: 'en_US',
+          symbol: '\$',
+        ).format(amount);
       case 'EUR':
-        return NumberFormat.currency(locale: 'en_EU', symbol: '€').format(amount);
+        return NumberFormat.currency(
+          locale: 'en_EU',
+          symbol: '€',
+        ).format(amount);
       case 'JPY':
-        return NumberFormat.currency(locale: 'ja_JP', symbol: '¥').format(amount);
+        return NumberFormat.currency(
+          locale: 'ja_JP',
+          symbol: '¥',
+        ).format(amount);
       case 'KRW':
-        return NumberFormat.currency(locale: 'ko_KR', symbol: '₩').format(amount);
+        return NumberFormat.currency(
+          locale: 'ko_KR',
+          symbol: '₩',
+        ).format(amount);
       case 'CNY':
-        return NumberFormat.currency(locale: 'zh_CN', symbol: '¥').format(amount);
+        return NumberFormat.currency(
+          locale: 'zh_CN',
+          symbol: '¥',
+        ).format(amount);
       case 'GBP':
-        return NumberFormat.currency(locale: 'en_GB', symbol: '£').format(amount);
+        return NumberFormat.currency(
+          locale: 'en_GB',
+          symbol: '£',
+        ).format(amount);
       case 'SGD':
-        return NumberFormat.currency(locale: 'en_SG', symbol: r'S$').format(amount);
+        return NumberFormat.currency(
+          locale: 'en_SG',
+          symbol: r'S$',
+        ).format(amount);
       case 'THB':
-        return NumberFormat.currency(locale: 'th_TH', symbol: '฿').format(amount);
+        return NumberFormat.currency(
+          locale: 'th_TH',
+          symbol: '฿',
+        ).format(amount);
       case 'VND':
       default:
-        return NumberFormat.currency(locale: 'vi_VN', symbol: '₫').format(amount);
+        return NumberFormat.currency(
+          locale: 'vi_VN',
+          symbol: '₫',
+        ).format(amount);
     }
   }
 
@@ -152,10 +192,11 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('users')
-            .doc(currentUserId)
-            .snapshots(),
+        stream:
+            FirebaseFirestore.instance
+                .collection('users')
+                .doc(currentUserId)
+                .snapshots(),
         builder: (context, userSnapshot) {
           if (userSnapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -170,11 +211,12 @@ class _HomeScreenState extends State<HomeScreen> {
               setState(() {});
             },
             child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('subscriptions')
-                  .where('userId', isEqualTo: currentUserId)
-                  .orderBy('nextPaymentDate', descending: false)
-                  .snapshots(),
+              stream:
+                  FirebaseFirestore.instance
+                      .collection('subscriptions')
+                      .where('userId', isEqualTo: currentUserId)
+                      .orderBy('nextPaymentDate', descending: false)
+                      .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return Center(
@@ -188,11 +230,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 final docs = snapshot.data!.docs;
 
-                final paymentDates = docs
-                    .map((doc) =>
-                        (doc['nextPaymentDate'] as Timestamp?)?.toDate())
-                    .whereType<DateTime>()
-                    .toSet();
+                final paymentDates =
+                    docs
+                        .map(
+                          (doc) =>
+                              (doc['nextPaymentDate'] as Timestamp?)?.toDate(),
+                        )
+                        .whereType<DateTime>()
+                        .toSet();
 
                 if (_paymentDays != paymentDates) {
                   _paymentDays = paymentDates;
@@ -201,21 +246,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (_selectedDay != null) {
                   List<QueryDocumentSnapshot> subscriptions =
                       _subscriptionsForSelectedDay ??
-                          docs.where((doc) {
-                            final data = doc.data()! as Map<String, dynamic>;
-                            final nextDate =
-                                (data['nextPaymentDate'] as Timestamp?)?.toDate();
-                            return nextDate != null &&
-                                nextDate.year == _selectedDay!.year &&
-                                nextDate.month == _selectedDay!.month &&
-                                nextDate.day == _selectedDay!.day;
-                          }).toList();
+                      docs.where((doc) {
+                        final data = doc.data()! as Map<String, dynamic>;
+                        final nextDate =
+                            (data['nextPaymentDate'] as Timestamp?)?.toDate();
+                        return nextDate != null &&
+                            nextDate.year == _selectedDay!.year &&
+                            nextDate.month == _selectedDay!.month &&
+                            nextDate.day == _selectedDay!.day;
+                      }).toList();
 
                   return Column(
                     children: [
                       Padding(
                         padding: const EdgeInsets.only(
-                            top: 16, bottom: 8, left: 16, right: 16),
+                          top: 16,
+                          bottom: 8,
+                          left: 16,
+                          right: 16,
+                        ),
                         child: Align(
                           alignment: Alignment.centerLeft,
                           child: Text(
@@ -230,7 +279,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       _buildCalendar(paymentDates, theme, docs),
                       Padding(
                         padding: const EdgeInsets.only(
-                          top: 12, left: 16, right: 16, bottom: 8),
+                          top: 12,
+                          left: 16,
+                          right: 16,
+                          bottom: 8,
+                        ),
                         child: Row(
                           children: [
                             Expanded(
@@ -257,148 +310,203 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       Expanded(
-                        child: subscriptions.isEmpty
-                            ? const Center(
-                                child: Text(
-                                  'Không có khoản thanh toán nào trong ngày này.',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    color: Colors.grey,
+                        child:
+                            subscriptions.isEmpty
+                                ? const Center(
+                                  child: Text(
+                                    'Không có khoản thanh toán nào trong ngày này.',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      color: Colors.grey,
+                                    ),
                                   ),
-                                ),
-                              )
-                            : ListView.separated(
-                                padding: const EdgeInsets.all(16.0),
-                                itemCount: subscriptions.length,
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(height: 12),
-                                itemBuilder: (context, index) {
-                                  final document = subscriptions[index];
-                                  final data =
-                                      document.data()! as Map<String, dynamic>;
+                                )
+                                : ListView.separated(
+                                  padding: const EdgeInsets.all(16.0),
+                                  itemCount: subscriptions.length,
+                                  separatorBuilder:
+                                      (_, __) => const SizedBox(height: 12),
+                                  itemBuilder: (context, index) {
+                                    final document = subscriptions[index];
+                                    final data =
+                                        document.data()!
+                                            as Map<String, dynamic>;
 
-                                  final nextDate = (data['nextPaymentDate']
-                                          as Timestamp?)
-                                      ?.toDate();
-                                  final formattedDate = (nextDate != null)
-                                      ? '${nextDate.day}/${nextDate.month}/${nextDate.year}'
-                                      : 'Chưa có ngày';
+                                    final nextDate =
+                                        (data['nextPaymentDate'] as Timestamp?)
+                                            ?.toDate();
+                                    final formattedDate =
+                                        (nextDate != null)
+                                            ? '${nextDate.day}/${nextDate.month}/${nextDate.year}'
+                                            : 'Chưa có ngày';
 
-                                  final amount = data['amount'] ?? 0;
-                                  final currency =
-                                      (data['currency'] ?? 'VND').toString();
-                                  final formattedAmount = getFormattedAmount(amount, currency);
+                                    final amount = data['amount'] ?? 0;
+                                    final currency =
+                                        (data['currency'] ?? 'VND').toString();
+                                    final formattedAmount = getFormattedAmount(
+                                      amount,
+                                      currency,
+                                    );
 
-                                  return Dismissible(
-                                    key: Key(document.id),
-                                    direction: DismissDirection.endToStart,
-                                    background: Padding(
-                                      padding: const EdgeInsets.symmetric(vertical: 3),
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(12),
-                                        child: Container(
-                                          alignment: Alignment.centerRight,
-                                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                                          color: Colors.red,
-                                          child: const Icon(Icons.delete, color: Colors.white, size: 32),
+                                    return Dismissible(
+                                      key: Key(document.id),
+                                      direction: DismissDirection.endToStart,
+                                      background: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 3,
+                                        ),
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                          child: Container(
+                                            alignment: Alignment.centerRight,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 20,
+                                            ),
+                                            color: Colors.red,
+                                            child: const Icon(
+                                              Icons.delete,
+                                              color: Colors.white,
+                                              size: 32,
+                                            ),
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                    confirmDismiss: (direction) async {
-                                      return await showDialog<bool>(
-                                        context: context,
-                                        builder: (context) => AlertDialog(
-                                          title: const Text('Xác nhận xoá'),
-                                          content: Text('Bạn có chắc muốn xoá "${data['serviceName'] ?? 'Không có tên'}"?'),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () => Navigator.of(context).pop(false),
-                                              child: const Text('Huỷ'),
+                                      confirmDismiss: (direction) async {
+                                        return await showDialog<bool>(
+                                          context: context,
+                                          builder:
+                                              (context) => AlertDialog(
+                                                title: const Text(
+                                                  'Xác nhận xoá',
+                                                ),
+                                                content: Text(
+                                                  'Bạn có chắc muốn xoá "${data['serviceName'] ?? 'Không có tên'}"?',
+                                                ),
+                                                actions: [
+                                                  TextButton(
+                                                    onPressed:
+                                                        () => Navigator.of(
+                                                          context,
+                                                        ).pop(false),
+                                                    child: const Text('Huỷ'),
+                                                  ),
+                                                  TextButton(
+                                                    onPressed:
+                                                        () => Navigator.of(
+                                                          context,
+                                                        ).pop(true),
+                                                    child: const Text(
+                                                      'Xoá',
+                                                      style: TextStyle(
+                                                        color: Colors.red,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                        );
+                                      },
+                                      onDismissed: (_) async {
+                                        await FirebaseFirestore.instance
+                                            .collection('subscriptions')
+                                            .doc(document.id)
+                                            .delete();
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Đã xoá "${data['serviceName'] ?? 'Không có tên'}"',
                                             ),
-                                            TextButton(
-                                              onPressed: () => Navigator.of(context).pop(true),
-                                              child: const Text('Xoá', style: TextStyle(color: Colors.red)),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    },
-                                    onDismissed: (_) async {
-                                      await FirebaseFirestore.instance
-                                          .collection('subscriptions')
-                                          .doc(document.id)
-                                          .delete();
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text('Đã xoá "${data['serviceName'] ?? 'Không có tên'}"')),
-                                      );
-                                    },
-                                    child: Material(
-                                      elevation: 3,
-                                      borderRadius: BorderRadius.circular(12),
-                                      color: theme.colorScheme.surface,
-                                      child: InkWell(
+                                          ),
+                                        );
+                                      },
+                                      child: Material(
+                                        elevation: 3,
                                         borderRadius: BorderRadius.circular(12),
-                                        onTap: () {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (context) =>
-                                                  SubscriptionDetailScreen(
-                                                subscriptionId: document.id,
-                                                data: data,
+                                        color: theme.colorScheme.surface,
+                                        child: InkWell(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                          onTap: () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder:
+                                                    (context) =>
+                                                        SubscriptionDetailScreen(
+                                                          subscriptionId:
+                                                              document.id,
+                                                          data: data,
+                                                        ),
+                                              ),
+                                            );
+                                          },
+                                          child: ListTile(
+                                            tileColor: Colors.transparent,
+                                            contentPadding:
+                                                const EdgeInsets.symmetric(
+                                                  vertical: 8,
+                                                  horizontal: 16,
+                                                ),
+                                            leading: CircleAvatar(
+                                              radius: 25,
+                                              backgroundColor:
+                                                  theme
+                                                      .colorScheme
+                                                      .surfaceVariant,
+                                              backgroundImage:
+                                                  (data['iconUrl'] != null &&
+                                                          data['iconUrl']
+                                                              .isNotEmpty)
+                                                      ? NetworkImage(
+                                                        data['iconUrl'],
+                                                      )
+                                                      : null,
+                                              child:
+                                                  (data['iconUrl'] == null ||
+                                                          data['iconUrl']
+                                                              .isEmpty)
+                                                      ? const Icon(
+                                                        Icons
+                                                            .wallet_giftcard_rounded,
+                                                        color: Colors.grey,
+                                                      )
+                                                      : null,
+                                            ),
+                                            title: Text(
+                                              data['serviceName'] ??
+                                                  'Không có tên',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 16,
+                                                color:
+                                                    theme
+                                                        .textTheme
+                                                        .bodyLarge
+                                                        ?.color,
                                               ),
                                             ),
-                                          );
-                                        },
-                                        child: ListTile(
-                                          tileColor: Colors.transparent,
-                                          contentPadding:
-                                              const EdgeInsets.symmetric(
-                                            vertical: 8,
-                                            horizontal: 16,
-                                          ),
-                                          leading: CircleAvatar(
-                                            radius: 25,
-                                            backgroundColor: theme
-                                                .colorScheme.surfaceVariant,
-                                            backgroundImage:
-                                                (data['iconUrl'] != null &&
-                                                        data['iconUrl']
-                                                            .isNotEmpty)
-                                                    ? NetworkImage(
-                                                        data['iconUrl'])
-                                                    : null,
-                                            child: (data['iconUrl'] == null ||
-                                                    data['iconUrl'].isEmpty)
-                                                ? const Icon(
-                                                    Icons.wallet_giftcard_rounded,
-                                                    color: Colors.grey,
-                                                  )
-                                                : null,
-                                          ),
-                                          title: Text(
-                                            data['serviceName'] ?? 'Không có tên',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 16,
-                                              color: theme
-                                                  .textTheme.bodyLarge?.color,
-                                            ),
-                                          ),
-                                          subtitle: Text(
-                                            'Đến hạn: $formattedDate\nSố tiền: $formattedAmount',
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: theme
-                                                  .textTheme.bodyMedium?.color,
+                                            subtitle: Text(
+                                              'Đến hạn: $formattedDate\nSố tiền: $formattedAmount',
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                color:
+                                                    theme
+                                                        .textTheme
+                                                        .bodyMedium
+                                                        ?.color,
+                                              ),
                                             ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                  );
-                                },
-                              ),
+                                    );
+                                  },
+                                ),
                       ),
                     ],
                   );
@@ -466,14 +574,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
                           final nextDate =
                               (data['nextPaymentDate'] as Timestamp?)?.toDate();
-                          final formattedDate = (nextDate != null)
-                              ? '${nextDate.day}/${nextDate.month}/${nextDate.year}'
-                              : 'Chưa có ngày';
+                          final formattedDate =
+                              (nextDate != null)
+                                  ? '${nextDate.day}/${nextDate.month}/${nextDate.year}'
+                                  : 'Chưa có ngày';
 
                           final amount = data['amount'] ?? 0;
                           final currency =
                               (data['currency'] ?? 'VND').toString();
-                          final formattedAmount = getFormattedAmount(amount, currency);
+                          final formattedAmount = getFormattedAmount(
+                            amount,
+                            currency,
+                          );
 
                           return Dismissible(
                             key: Key(document.id),
@@ -484,29 +596,47 @@ class _HomeScreenState extends State<HomeScreen> {
                                 borderRadius: BorderRadius.circular(12),
                                 child: Container(
                                   alignment: Alignment.centerRight,
-                                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 20,
+                                  ),
                                   color: Colors.red,
-                                  child: const Icon(Icons.delete, color: Colors.white, size: 32),
+                                  child: const Icon(
+                                    Icons.delete,
+                                    color: Colors.white,
+                                    size: 32,
+                                  ),
                                 ),
                               ),
                             ),
                             confirmDismiss: (direction) async {
                               return await showDialog<bool>(
                                 context: context,
-                                builder: (context) => AlertDialog(
-                                  title: const Text('Xác nhận xoá'),
-                                  content: Text('Bạn có chắc muốn xoá "${data['serviceName'] ?? 'Không có tên'}"?'),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.of(context).pop(false),
-                                      child: const Text('Huỷ'),
+                                builder:
+                                    (context) => AlertDialog(
+                                      title: const Text('Xác nhận xoá'),
+                                      content: Text(
+                                        'Bạn có chắc muốn xoá "${data['serviceName'] ?? 'Không có tên'}"?',
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed:
+                                              () => Navigator.of(
+                                                context,
+                                              ).pop(false),
+                                          child: const Text('Huỷ'),
+                                        ),
+                                        TextButton(
+                                          onPressed:
+                                              () => Navigator.of(
+                                                context,
+                                              ).pop(true),
+                                          child: const Text(
+                                            'Xoá',
+                                            style: TextStyle(color: Colors.red),
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    TextButton(
-                                      onPressed: () => Navigator.of(context).pop(true),
-                                      child: const Text('Xoá', style: TextStyle(color: Colors.red)),
-                                    ),
-                                  ],
-                                ),
                               );
                             },
                             onDismissed: (_) async {
@@ -515,7 +645,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                   .doc(document.id)
                                   .delete();
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Đã xoá "${data['serviceName'] ?? 'Không có tên'}"')),
+                                SnackBar(
+                                  content: Text(
+                                    'Đã xoá "${data['serviceName'] ?? 'Không có tên'}"',
+                                  ),
+                                ),
                               );
                             },
                             child: Material(
@@ -528,11 +662,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (context) =>
-                                          SubscriptionDetailScreen(
-                                        subscriptionId: document.id,
-                                        data: data,
-                                      ),
+                                      builder:
+                                          (context) => SubscriptionDetailScreen(
+                                            subscriptionId: document.id,
+                                            data: data,
+                                          ),
                                     ),
                                   );
                                 },
@@ -551,13 +685,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                                 data['iconUrl'].isNotEmpty)
                                             ? NetworkImage(data['iconUrl'])
                                             : null,
-                                    child: (data['iconUrl'] == null ||
-                                            data['iconUrl'].isEmpty)
-                                        ? const Icon(
-                                            Icons.wallet_giftcard_rounded,
-                                            color: Colors.grey,
-                                          )
-                                        : null,
+                                    child:
+                                        (data['iconUrl'] == null ||
+                                                data['iconUrl'].isEmpty)
+                                            ? const Icon(
+                                              Icons.wallet_giftcard_rounded,
+                                              color: Colors.grey,
+                                            )
+                                            : null,
                                   ),
                                   title: Text(
                                     data['serviceName'] ?? 'Không có tên',
@@ -571,8 +706,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     'Đến hạn: $formattedDate\nSố tiền: $formattedAmount',
                                     style: TextStyle(
                                       fontSize: 14,
-                                      color:
-                                          theme.textTheme.bodyMedium?.color,
+                                      color: theme.textTheme.bodyMedium?.color,
                                     ),
                                   ),
                                 ),
@@ -589,22 +723,52 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const AddSubscriptionScreen(),
+      floatingActionButton: Stack(
+        children: [
+          Positioned(
+            bottom: 80,
+            right: 16,
+            child: FloatingActionButton(
+              heroTag: 'testNotification',
+              mini: true,
+              tooltip: 'Gửi thông báo test',
+              child: const Icon(Icons.notifications_active),
+              onPressed: () async {
+                await NotificationHelper.showNow(
+                  id: 9999,
+                  title: 'Thông báo test',
+                  body: 'Đây là thông báo local notification test!',
+                );
+              },
             ),
-          );
-        },
-        tooltip: 'Thêm mới',
-        child: const Icon(Icons.add),
+          ),
+          Positioned(
+            bottom: 16,
+            right: 16,
+            child: FloatingActionButton(
+              heroTag: 'addSubscription',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const AddSubscriptionScreen(),
+                  ),
+                );
+              },
+              tooltip: 'Thêm mới',
+              child: const Icon(Icons.add),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildCalendar(Set<DateTime> paymentDates, ThemeData theme, List<QueryDocumentSnapshot> allDocs) {
+  Widget _buildCalendar(
+    Set<DateTime> paymentDates,
+    ThemeData theme,
+    List<QueryDocumentSnapshot> allDocs,
+  ) {
     return TableCalendar(
       firstDay: DateTime.utc(2020, 1, 1),
       lastDay: DateTime.utc(2100, 12, 31),
