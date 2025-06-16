@@ -1,17 +1,17 @@
-// lib/main.dart
-
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
-import 'screens/auth/auth_gate.dart'; // Sửa đường dẫn import
+import 'screens/auth/auth_gate.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
 import 'services/theme_service.dart';
+import 'utils/notification_helper.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await initializeDateFormatting('vi_VN', null);
+  await NotificationHelper.initialize();
   runApp(
     ChangeNotifierProvider(create: (_) => ThemeService(), child: const MyApp()),
   );
@@ -29,9 +29,9 @@ class MyApp extends StatelessWidget {
       theme: ThemeData.light(
         useMaterial3: true,
       ).copyWith(cardColor: Colors.white),
-      darkTheme: ThemeData.dark(useMaterial3: true).copyWith(
-        cardColor: Colors.grey[900], // hoặc colorScheme.surface
-      ),
+      darkTheme: ThemeData.dark(
+        useMaterial3: true,
+      ).copyWith(cardColor: Colors.grey[900]),
       themeMode: themeService.themeMode,
       home: const AuthGate(),
     );
