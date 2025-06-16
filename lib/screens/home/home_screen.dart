@@ -54,8 +54,14 @@ class _HomeScreenState extends State<HomeScreen> {
       nextDate = (data['nextPaymentDate'] as Timestamp).toDate();
     }
     final now = DateTime.now();
+    final yesterday = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(const Duration(days: 1));
 
-    if (nextDate != null && now.isAfter(nextDate)) {
+    // Chỉ cập nhật nếu ngày thanh toán đã qua hôm qua (không cập nhật nếu là hôm nay)
+    if (nextDate != null && yesterday.isAfter(nextDate)) {
       String cycle = data['paymentCycle'] ?? 'monthly';
       DateTime updatedDate = nextDate;
 
