@@ -12,7 +12,7 @@ class AddSubscriptionScreen extends StatefulWidget {
   final Map<String, dynamic>? initialData;
 
   const AddSubscriptionScreen({Key? key, this.subscriptionId, this.initialData})
-      : super(key: key);
+    : super(key: key);
 
   @override
   State<AddSubscriptionScreen> createState() => _AddSubscriptionScreenState();
@@ -27,6 +27,9 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
   DateTime? _selectedDate;
   String _selectedPeriod = 'monthly';
   String _selectedCurrency = 'VND';
+  String _planType = 'personal';
+  List<String> _familyMemberUids = [];
+  final TextEditingController _memberUidController = TextEditingController();
   File? _imageFile;
   bool _isUploading = false;
 
@@ -52,6 +55,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     _serviceNameController.dispose();
     _amountController.dispose();
     _notesController.dispose();
+    _memberUidController.dispose();
     super.dispose();
   }
 
@@ -121,6 +125,12 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     }
   }
 
+  Future<bool> _checkUserExists(String uid) async {
+    final doc =
+        await FirebaseFirestore.instance.collection('users').doc(uid).get();
+    return doc.exists;
+  }
+
   Future<void> _saveSubscription() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -152,6 +162,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
       'notes': _notesController.text.trim(),
       'userId': userId,
       'createdAt': widget.initialData?['createdAt'] ?? Timestamp.now(),
+      'planType': _planType,
     };
 
     try {
@@ -172,6 +183,38 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
         ref = await FirebaseFirestore.instance
             .collection('subscriptions')
             .add(subscriptionData);
+
+        // Thêm owner vào subscription_members
+        await FirebaseFirestore.instance
+            .collection('subscription_members')
+            .add({
+              'subscriptionId': ref.id,
+              'userId': userId,
+              'role': 'owner',
+              'ownerId': userId,
+              'joinedAt': Timestamp.now(),
+            });
+
+        // Nếu là gói gia đình, thêm các thành viên (chỉ thêm nếu tồn tại trong users)
+        if (_planType == 'family') {
+          for (final memberUid in _familyMemberUids) {
+            if (memberUid.trim().isNotEmpty && memberUid != userId) {
+              final exists = await _checkUserExists(memberUid.trim());
+              if (exists) {
+                await FirebaseFirestore.instance
+                    .collection('subscription_members')
+                    .add({
+                      'subscriptionId': ref.id,
+                      'userId': memberUid.trim(),
+                      'role': 'member',
+                      'ownerId': userId,
+                      'joinedAt': Timestamp.now(),
+                    });
+              }
+            }
+          }
+        }
+
         if (!mounted) return;
         ScaffoldMessenger.of(
           context,
@@ -262,11 +305,13 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: colorScheme.primary,
-                    )),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.primary,
+                  ),
+                ),
                 const SizedBox(height: 4),
                 child,
               ],
@@ -296,29 +341,33 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
               ),
             ],
           ),
-          child: _imageFile != null
-              ? ClipOval(
-                  child: Image.file(
-                    _imageFile!,
-                    fit: BoxFit.cover,
-                    width: 110,
-                    height: 110,
-                  ),
-                )
-              : widget.initialData?['iconUrl'] != null &&
+          child:
+              _imageFile != null
+                  ? ClipOval(
+                    child: Image.file(
+                      _imageFile!,
+                      fit: BoxFit.cover,
+                      width: 110,
+                      height: 110,
+                    ),
+                  )
+                  : widget.initialData?['iconUrl'] != null &&
                       widget.initialData?['iconUrl'] != ''
                   ? ClipOval(
-                      child: Image.network(
-                        widget.initialData!['iconUrl'],
-                        fit: BoxFit.cover,
-                        width: 110,
-                        height: 110,
-                      ),
-                    )
-                  : Center(
-                      child: Icon(Icons.add_photo_alternate_outlined,
-                          color: colorScheme.primary, size: 42),
+                    child: Image.network(
+                      widget.initialData!['iconUrl'],
+                      fit: BoxFit.cover,
+                      width: 110,
+                      height: 110,
                     ),
+                  )
+                  : Center(
+                    child: Icon(
+                      Icons.add_photo_alternate_outlined,
+                      color: colorScheme.primary,
+                      size: 42,
+                    ),
+                  ),
         ),
         if (_isUploading)
           Container(
@@ -355,7 +404,11 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                     ),
                   ],
                 ),
-                child: Icon(Icons.camera_alt, color: colorScheme.onPrimary, size: 18),
+                child: Icon(
+                  Icons.camera_alt,
+                  color: colorScheme.onPrimary,
+                  size: 18,
+                ),
               ),
             ),
           ),
@@ -363,14 +416,12 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     );
   }
 
-  /// Build the row for amount & currency with equal height, no overflow, compact currency field
   Widget _buildAmountCurrencyRow() {
     final colorScheme = Theme.of(context).colorScheme;
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Amount
           Expanded(
             flex: 3,
             child: _buildInputSection(
@@ -398,7 +449,6 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
             ),
           ),
           const SizedBox(width: 10),
-          // Currency - compact, same height as amount
           Container(
             margin: const EdgeInsets.only(bottom: 0),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
@@ -414,11 +464,13 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Tiền tệ',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: colorScheme.primary,
-                    )),
+                Text(
+                  'Tiền tệ',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.primary,
+                  ),
+                ),
                 DropdownButtonFormField<String>(
                   value: _selectedCurrency,
                   isExpanded: true,
@@ -427,17 +479,18 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                     isDense: true,
                     contentPadding: EdgeInsets.zero,
                   ),
-                  items: _currencies
-                      .map(
-                        (e) => DropdownMenuItem(
-                          value: e['value'],
-                          child: Text(
-                            e['value']!, // chỉ hiện mã tiền tệ
-                            style: const TextStyle(fontSize: 15),
-                          ),
-                        ),
-                      )
-                      .toList(),
+                  items:
+                      _currencies
+                          .map(
+                            (e) => DropdownMenuItem(
+                              value: e['value'],
+                              child: Text(
+                                e['value']!,
+                                style: const TextStyle(fontSize: 15),
+                              ),
+                            ),
+                          )
+                          .toList(),
                   onChanged: (value) {
                     setState(() {
                       _selectedCurrency = value!;
@@ -454,13 +507,147 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     );
   }
 
+  Widget _buildPlanTypeSelector() {
+    final isFamily = _planType == 'family';
+    final userId = AuthService().currentUser?.uid;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Loại gói:', style: TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        ToggleButtons(
+          isSelected: [_planType == 'personal', _planType == 'family'],
+          onPressed: (index) {
+            setState(() {
+              _planType = index == 0 ? 'personal' : 'family';
+              if (_planType == 'personal') _familyMemberUids.clear();
+            });
+          },
+          borderRadius: BorderRadius.circular(12),
+          selectedColor: Theme.of(context).colorScheme.onPrimary,
+          fillColor: Theme.of(context).colorScheme.primary,
+          color: Theme.of(context).colorScheme.primary,
+          constraints: const BoxConstraints(minWidth: 110, minHeight: 40),
+          children: const [
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8),
+              child: Text('Cá nhân', style: TextStyle(fontSize: 15)),
+            ),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8),
+              child: Text('Gia đình', style: TextStyle(fontSize: 15)),
+            ),
+          ],
+        ),
+        if (isFamily) ...[
+          const SizedBox(height: 16),
+          Text(
+            'Thành viên (UID):',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _memberUidController,
+                  decoration: const InputDecoration(
+                    hintText: 'Nhập UID thành viên',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onSubmitted: (value) async {
+                    final uid = value.trim();
+                    if (uid.isEmpty) return;
+                    if (uid == userId) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Không thể thêm chính bạn vào danh sách thành viên!',
+                          ),
+                        ),
+                      );
+                      return;
+                    }
+                    if (_familyMemberUids.contains(uid)) return;
+                    final exists = await _checkUserExists(uid);
+                    if (!exists) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('UID này không tồn tại!')),
+                      );
+                      return;
+                    }
+                    setState(() {
+                      _familyMemberUids.add(uid);
+                      _memberUidController.clear();
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: () async {
+                  final uid = _memberUidController.text.trim();
+                  if (uid.isEmpty) return;
+                  if (uid == userId) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Không thể thêm chính bạn vào danh sách thành viên!',
+                        ),
+                      ),
+                    );
+                    return;
+                  }
+                  if (_familyMemberUids.contains(uid)) return;
+                  final exists = await _checkUserExists(uid);
+                  if (!exists) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('UID này không tồn tại!')),
+                    );
+                    return;
+                  }
+                  setState(() {
+                    _familyMemberUids.add(uid);
+                    _memberUidController.clear();
+                  });
+                },
+                child: const Text('Thêm'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (_familyMemberUids.isNotEmpty)
+            Wrap(
+              spacing: 8,
+              children:
+                  _familyMemberUids
+                      .map(
+                        (uid) => Chip(
+                          label: Text(uid),
+                          onDeleted: () {
+                            setState(() {
+                              _familyMemberUids.remove(uid);
+                            });
+                          },
+                        ),
+                      )
+                      .toList(),
+            ),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
       backgroundColor: colorScheme.surface,
       appBar: AppBar(
-        title: Text(widget.subscriptionId != null ? 'Chỉnh sửa dịch vụ' : 'Thêm dịch vụ'),
+        title: Text(
+          widget.subscriptionId != null ? 'Chỉnh sửa dịch vụ' : 'Thêm dịch vụ',
+        ),
         backgroundColor: colorScheme.surface,
         foregroundColor: colorScheme.onSurface,
         elevation: 0,
@@ -481,7 +668,6 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
             children: [
               Center(child: _buildImagePicker()),
               const SizedBox(height: 24),
-
               _buildInputSection(
                 label: 'Tên dịch vụ',
                 icon: Icons.apps_rounded,
@@ -491,16 +677,16 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                     hintText: 'Nhập tên dịch vụ (VD: Netflix, Spotify...)',
                     border: InputBorder.none,
                   ),
-                  validator: (value) => value == null || value.trim().isEmpty
-                      ? 'Vui lòng nhập tên dịch vụ'
-                      : null,
+                  validator:
+                      (value) =>
+                          value == null || value.trim().isEmpty
+                              ? 'Vui lòng nhập tên dịch vụ'
+                              : null,
                   style: const TextStyle(fontSize: 15),
                 ),
               ),
-
               _buildAmountCurrencyRow(),
               const SizedBox(height: 12),
-
               _buildInputSection(
                 label: 'Chu kỳ thanh toán',
                 icon: Icons.repeat_rounded,
@@ -511,14 +697,15 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                     border: InputBorder.none,
                     isDense: true,
                   ),
-                  items: _periods
-                      .map(
-                        (e) => DropdownMenuItem(
-                          value: e['value'],
-                          child: Text(e['label']!),
-                        ),
-                      )
-                      .toList(),
+                  items:
+                      _periods
+                          .map(
+                            (e) => DropdownMenuItem(
+                              value: e['value'],
+                              child: Text(e['label']!),
+                            ),
+                          )
+                          .toList(),
                   onChanged: (value) {
                     setState(() {
                       _selectedPeriod = value!;
@@ -527,7 +714,6 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                   style: const TextStyle(fontSize: 15),
                 ),
               ),
-
               _buildInputSection(
                 label: 'Ngày thanh toán tiếp theo',
                 icon: Icons.calendar_month_outlined,
@@ -548,7 +734,6 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                   ),
                 ),
               ),
-
               _buildInputSection(
                 label: 'Ghi chú (tuỳ chọn)',
                 icon: Icons.edit_note_rounded,
@@ -562,7 +747,8 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                   style: const TextStyle(fontSize: 15),
                 ),
               ),
-
+              const SizedBox(height: 8),
+              _buildPlanTypeSelector(),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
@@ -571,7 +757,10 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                   icon: const Icon(Icons.save_alt_rounded, size: 20),
                   label: Text(
                     widget.subscriptionId != null ? 'Lưu thay đổi' : 'Thêm mới',
-                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                    ),
                   ),
                   onPressed: _isUploading ? null : _saveSubscription,
                   style: ElevatedButton.styleFrom(

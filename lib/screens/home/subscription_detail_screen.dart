@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import '../../utils/notification_helper.dart';
+import '../../services/auth_service.dart'; // Thêm dòng này để lấy currentUserId
 
 class SubscriptionDetailScreen extends StatefulWidget {
   final String subscriptionId;
@@ -35,6 +36,8 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
   bool _isLoading = false;
   bool _isUploadingIcon = false;
   File? _iconFile;
+
+  String _planType = 'personal';
 
   final List<Map<String, String>> _currencies = [
     {'code': 'VND', 'name': '₫'},
@@ -120,7 +123,6 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
     setState(() => _isLoading = true);
     try {
       String? iconUrl = currentData['iconUrl'];
-
       if (_iconFile != null) {
         final uploadedUrl = await _uploadIcon(_iconFile!);
         if (uploadedUrl != null) {
@@ -136,8 +138,8 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
         'nextPaymentDate': Timestamp.fromDate(_nextPaymentDate),
         'notes': _notesController.text.trim(),
         'updatedAt': Timestamp.now(),
+        'planType': _planType, // Thêm dòng này
       };
-
       if (iconUrl != null && iconUrl.isNotEmpty) {
         updateData['iconUrl'] = iconUrl;
       }
@@ -147,32 +149,18 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
           .doc(widget.subscriptionId)
           .update(updateData);
 
-      // Thông báo
-      final now = DateTime.now();
-      final tomorrow = DateTime(now.year, now.month, now.day + 1);
-      final isTomorrow =
-          _nextPaymentDate.year == tomorrow.year &&
-          _nextPaymentDate.month == tomorrow.month &&
-          _nextPaymentDate.day == tomorrow.day;
-      if (isTomorrow) {
-        await NotificationHelper.showNow(
-          id: widget.subscriptionId.hashCode,
-          title: 'Sắp đến hạn thanh toán!',
-          body:
-              'Bạn có khoản thanh toán "${_serviceNameController.text.trim()}" vào ngày ${DateFormat('dd/MM/yyyy').format(_nextPaymentDate)}.',
-        );
-      } else {
-        final scheduledDate = _nextPaymentDate.subtract(
-          const Duration(days: 1),
-        );
-        if (scheduledDate.isAfter(now)) {
-          await NotificationHelper.scheduleNotification(
-            id: widget.subscriptionId.hashCode,
-            title: 'Sắp đến hạn thanh toán!',
-            body:
-                'Bạn có khoản thanh toán "${_serviceNameController.text.trim()}" vào ngày ${DateFormat('dd/MM/yyyy').format(_nextPaymentDate)}.',
-            scheduledDate: scheduledDate,
-          );
+      // Xử lý chuyển đổi loại gói
+      final oldPlanType = currentData['planType'] ?? 'personal';
+      if (oldPlanType == 'family' && _planType == 'personal') {
+        // Xoá tất cả thành viên (trừ owner)
+        final members =
+            await FirebaseFirestore.instance
+                .collection('subscription_members')
+                .where('subscriptionId', isEqualTo: widget.subscriptionId)
+                .where('role', isEqualTo: 'member')
+                .get();
+        for (final doc in members.docs) {
+          await doc.reference.delete();
         }
       }
 
@@ -799,7 +787,7 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
     );
   }
 
-  Widget _buildViewingMode(Map<String, dynamic> data) {
+  Widget _buildViewingMode(Map<String, dynamic> data, {bool isOwner = false}) {
     String formattedDate = 'Chưa có ngày';
     if (data['nextPaymentDate'] != null) {
       final nextDate = (data['nextPaymentDate'] as Timestamp).toDate();
@@ -895,13 +883,155 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
             ),
 
           const SizedBox(height: 20),
+          if ((data['planType'] ?? '') == 'family') ...[
+            if (isOwner) _buildAddMemberSection(),
+            const SizedBox(height: 12),
+            _buildMemberList(),
+          ],
         ],
       ),
     );
   }
 
+  Future<void> _addMemberByUid(String uid) async {
+    try {
+      // Lấy ownerId từ subscription
+      final subDoc =
+          await FirebaseFirestore.instance
+              .collection('subscriptions')
+              .doc(widget.subscriptionId)
+              .get();
+      final ownerId = subDoc['userId'];
+
+      await FirebaseFirestore.instance.collection('subscription_members').add({
+        'subscriptionId': widget.subscriptionId,
+        'userId': uid,
+        'role': 'member',
+        'ownerId': ownerId, // Thêm trường này
+        'joinedAt': Timestamp.now(),
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đã thêm thành viên thành công!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+      }
+    }
+  }
+
+  Widget _buildAddMemberSection() {
+    final _uidController = TextEditingController();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12.0),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _uidController,
+              decoration: const InputDecoration(
+                labelText: 'Nhập UID thành viên',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton(
+            onPressed: () {
+              final uid = _uidController.text.trim();
+              if (uid.isNotEmpty) {
+                _addMemberByUid(uid);
+                _uidController.clear();
+              }
+            },
+            child: const Text('Thêm'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMemberList() {
+    return StreamBuilder<QuerySnapshot>(
+      stream:
+          FirebaseFirestore.instance
+              .collection('subscription_members')
+              .where('subscriptionId', isEqualTo: widget.subscriptionId)
+              .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const CircularProgressIndicator();
+        }
+        final members = snapshot.data!.docs;
+        if (members.isEmpty) {
+          return const Text('Chưa có thành viên nào.');
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Thành viên:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            ...members.map((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              final userId = data['userId'] ?? '';
+              final role = data['role'] ?? '';
+              return FutureBuilder<DocumentSnapshot>(
+                future:
+                    FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(userId)
+                        .get(),
+                builder: (context, userSnapshot) {
+                  String displayName = userId;
+                  if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                    final userData =
+                        userSnapshot.data!.data() as Map<String, dynamic>;
+                    displayName = userData['displayName'] ?? userId;
+                  }
+                  return ListTile(
+                    title: Text(displayName),
+                    subtitle: Text('UID: $userId\nQuyền: $role'),
+                    isThreeLine: true,
+                  );
+                },
+              );
+            }),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildPlanTypeSelector() {
+    return Row(
+      children: [
+        const Text('Loại gói:'),
+        const SizedBox(width: 16),
+        DropdownButton<String>(
+          value: _planType,
+          items: const [
+            DropdownMenuItem(value: 'personal', child: Text('Cá nhân')),
+            DropdownMenuItem(value: 'family', child: Text('Gia đình')),
+          ],
+          onChanged: (value) {
+            setState(() {
+              _planType = value!;
+            });
+          },
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final currentUserId = AuthService().currentUser?.uid;
     return StreamBuilder<DocumentSnapshot>(
       stream:
           FirebaseFirestore.instance
@@ -914,7 +1044,17 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
             body: Center(child: CircularProgressIndicator()),
           );
         }
+        // Sửa đoạn này:
+        if (!snapshot.data!.exists || snapshot.data!.data() == null) {
+          // Không pop ở đây nữa!
+          return const Scaffold(
+            body: Center(
+              child: Text('Dịch vụ này đã bị xoá hoặc không tồn tại.'),
+            ),
+          );
+        }
         final data = snapshot.data!.data() as Map<String, dynamic>;
+        final isOwner = data['userId'] == currentUserId;
 
         // Load data to controllers when switching to editing mode
         if (_isEditing && _serviceNameController.text.isEmpty) {
@@ -925,7 +1065,7 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
           appBar: AppBar(
             title: Text(_isEditing ? 'Chỉnh sửa dịch vụ' : 'Chi tiết dịch vụ'),
             actions: [
-              if (!_isEditing) ...[
+              if (!_isEditing && isOwner) ...[
                 IconButton(
                   icon: const Icon(Icons.edit, color: Colors.blue),
                   tooltip: 'Sửa',
@@ -963,6 +1103,19 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
                           ),
                     );
                     if (confirm == true) {
+                      // Xoá các member liên quan
+                      final members =
+                          await FirebaseFirestore.instance
+                              .collection('subscription_members')
+                              .where(
+                                'subscriptionId',
+                                isEqualTo: widget.subscriptionId,
+                              )
+                              .get();
+                      for (final doc in members.docs) {
+                        await doc.reference.delete();
+                      }
+                      // Xoá subscription
                       await FirebaseFirestore.instance
                           .collection('subscriptions')
                           .doc(widget.subscriptionId)
@@ -979,7 +1132,12 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
               ],
             ],
           ),
-          body: _isEditing ? _buildEditingView(data) : _buildViewingMode(data),
+          body:
+              _isEditing
+                  ? (isOwner
+                      ? _buildEditingView(data)
+                      : _buildViewingMode(data))
+                  : _buildViewingMode(data, isOwner: isOwner),
         );
       },
     );
