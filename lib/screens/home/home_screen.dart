@@ -5,6 +5,7 @@ import '../../services/auth_service.dart';
 import 'add_subscription_screen.dart';
 import '../profile/profile_screen.dart';
 import '../../utils/notification_helper.dart';
+import '../../utils/avatar_helper.dart';
 import 'tabs/payment_jar_tab.dart';
 import 'tabs/list_calendar_tab.dart';
 
@@ -245,7 +246,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           builder: (context, snapshot) {
             final userData =
                 snapshot.data?.data() as Map<String, dynamic>? ?? {};
-            final avatarUrl = userData['avatar'] as String?;
+            final avatarUrl = AvatarHelper.getAvatarUrl(userData);
 
             return Padding(
               padding: const EdgeInsets.only(right: 16),
@@ -273,21 +274,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       ),
                     ],
                   ),
-                  child: CircleAvatar(
+                  child: AvatarHelper.buildAvatar(
+                    avatarUrl: avatarUrl,
                     radius: 20,
                     backgroundColor: colorScheme.surfaceVariant,
-                    backgroundImage:
-                        (avatarUrl != null && avatarUrl.isNotEmpty)
-                            ? NetworkImage(avatarUrl)
-                            : null,
-                    child:
-                        (avatarUrl == null || avatarUrl.isEmpty)
-                            ? Icon(
-                              Icons.person_outline,
-                              size: 24,
-                              color: colorScheme.onSurfaceVariant,
-                            )
-                            : null,
+                    iconColor: colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),

@@ -527,6 +527,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         backgroundColor: colorScheme.surface,
+                        foregroundColor: colorScheme.onSurface,
                       ),
                       child:
                           _isGoogleLoading
@@ -543,14 +544,15 @@ class _LoginScreenState extends State<LoginScreen> {
                               : Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
+                                  // Tăng kích thước logo và dùng ảnh nền trong suốt
                                   Image.asset(
                                     isDark
                                         ? 'lib/assets/android_dark_sq_na@1x.png'
                                         : 'lib/assets/android_light_sq_na@1x.png',
-                                    height: 24,
-                                    width: 24,
+                                    height: 32, // tăng kích thước
+                                    width: 32,
                                   ),
-                                  const SizedBox(width: 12),
+                                  const SizedBox(width: 16), // tăng khoảng cách
                                   Text(
                                     'Đăng nhập với Google',
                                     style: TextStyle(

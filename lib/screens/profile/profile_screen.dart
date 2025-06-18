@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -8,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../../services/theme_service.dart';
 import '../auth/change_password_screen.dart';
 import '../../services/auth_service.dart';
+import '../../utils/avatar_helper.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -87,9 +89,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
         if (avatarUrl == null) throw Exception('Không upload được ảnh');
       }
 
-      final updateData = {'displayName': _displayNameController.text.trim()};
+      // Sửa kiểu dữ liệu từ Map<String, String> thành Map<String, dynamic>
+      final Map<String, dynamic> updateData = {
+        'displayName': _displayNameController.text.trim(),
+      };
+
       if (avatarUrl != null) {
-        updateData['avatar'] = avatarUrl;
+        // Sử dụng helper để cập nhật đúng cách
+        updateData.addAll(AvatarHelper.getUpdateData(avatarUrl));
       }
 
       await FirebaseFirestore.instance
@@ -299,6 +306,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Widget _buildUidDisplay(
+    String uid,
+    ThemeData theme,
+    ColorScheme colorScheme,
+  ) {
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Flexible(
+              child: SelectableText(
+                uid,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurface.withOpacity(0.7),
+                  fontFamily: "monospace",
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              icon: const Icon(Icons.copy, size: 20),
+              tooltip: 'Sao chép UID',
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: uid));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Đã sao chép UID'),
+                    duration: Duration(seconds: 1),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = AuthService().currentUser;
@@ -327,12 +375,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         }
 
         final data = snapshot.data!.data() as Map<String, dynamic>? ?? {};
-        final avatar =
-            (data['avatar'] as String?)?.isNotEmpty == true
-                ? data['avatar']
-                : 'https://res.cloudinary.com/ddfzzvwvx/image/upload/v1749923335/download_iqse1o.jpg';
+        final avatar = AvatarHelper.getAvatarUrl(data);
         final displayName = data['displayName'] ?? '';
         final email = user.email ?? '';
+        final uid = user.uid;
 
         if (!_isEditing) {
           _displayNameController.text = displayName;
@@ -375,14 +421,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 width: 3,
                               ),
                             ),
-                            child: CircleAvatar(
-                              radius: 60,
-                              backgroundColor: colorScheme.surfaceVariant,
-                              backgroundImage:
-                                  _avatarFile != null
-                                      ? FileImage(_avatarFile!)
-                                      : NetworkImage(avatar) as ImageProvider,
-                            ),
+                            child:
+                                _avatarFile != null
+                                    ? CircleAvatar(
+                                      radius: 60,
+                                      backgroundColor:
+                                          colorScheme.surfaceVariant,
+                                      backgroundImage: FileImage(_avatarFile!),
+                                    )
+                                    : AvatarHelper.buildAvatar(
+                                      avatarUrl: avatar,
+                                      radius: 60,
+                                      backgroundColor:
+                                          colorScheme.surfaceVariant,
+                                      iconColor: colorScheme.onSurfaceVariant,
+                                    ),
                           ),
                           if (_isUploadingAvatar)
                             Container(
@@ -511,7 +564,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 12),
+                      _buildUidDisplay(uid, theme, colorScheme),
+                      const SizedBox(height: 12),
 
                       // Save/Cancel Buttons
                       Row(
@@ -563,8 +618,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                         textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: 24),
-
+                      const SizedBox(height: 8),
+                      _buildUidDisplay(uid, theme, colorScheme),
                       _buildActionButton(
                         icon: Icons.edit_outlined,
                         label: 'Chỉnh sửa thông tin',
