@@ -20,12 +20,19 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
 
   bool _isLoading = false;
+  bool _isGoogleLoading = false; // Thêm biến loading riêng cho Google
   bool _obscurePassword = true;
   String? _loginError; // Thêm biến lưu lỗi đăng nhập
 
   void _setLoading(bool loading) {
     setState(() {
       _isLoading = loading;
+    });
+  }
+
+  void _setGoogleLoading(bool loading) {
+    setState(() {
+      _isGoogleLoading = loading;
     });
   }
 
@@ -71,6 +78,66 @@ class _LoginScreenState extends State<LoginScreen> {
       });
     } finally {
       _setLoading(false);
+    }
+  }
+
+  // Cập nhật method đăng nhập với Google
+  Future<void> _signInWithGoogle() async {
+    setState(() {
+      _loginError = null;
+    });
+
+    _setGoogleLoading(true);
+    try {
+      final userCredential = await _authService.signInWithGoogle();
+      if (userCredential == null) {
+        // User canceled the sign-in
+        return;
+      }
+
+      // Hiển thị thông báo thành công (tùy chọn)
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Đăng nhập thành công với ${userCredential.user?.email}',
+            ),
+            backgroundColor: Theme.of(context).colorScheme.primary,
+          ),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      setState(() {
+        switch (e.code) {
+          case 'account-exists-with-different-credential':
+            _loginError =
+                'Email này đã được sử dụng với phương thức đăng nhập khác';
+            break;
+          case 'invalid-credential':
+            _loginError = 'Thông tin đăng nhập không hợp lệ';
+            break;
+          case 'operation-not-allowed':
+            _loginError = 'Đăng nhập Google chưa được kích hoạt';
+            break;
+          case 'user-disabled':
+            _loginError = 'Tài khoản đã bị vô hiệu hóa';
+            break;
+          case 'network-request-failed':
+            _loginError = 'Lỗi kết nối mạng. Vui lòng kiểm tra internet';
+            break;
+          default:
+            _loginError = 'Đăng nhập Google thất bại: ${e.message}';
+        }
+      });
+    } catch (e) {
+      setState(() {
+        _loginError = 'Đăng nhập Google thất bại. Vui lòng thử lại';
+      });
+      print('Google Sign-In Error: $e');
+    } finally {
+      if (mounted) {
+        _setGoogleLoading(false);
+      }
     }
   }
 
@@ -384,7 +451,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     width: double.infinity,
                     height: 56,
                     child: ElevatedButton(
-                      onPressed: _isLoading ? null : _login,
+                      onPressed: _isLoading || _isGoogleLoading ? null : _login,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: colorScheme.primary,
                         foregroundColor: colorScheme.onPrimary,
@@ -442,19 +509,78 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 32),
 
+                  // Google Sign-In Button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: OutlinedButton(
+                      onPressed:
+                          _isLoading || _isGoogleLoading
+                              ? null
+                              : _signInWithGoogle,
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(
+                          color: colorScheme.outline.withOpacity(0.5),
+                          width: 1.5,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        backgroundColor: colorScheme.surface,
+                      ),
+                      child:
+                          _isGoogleLoading
+                              ? SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    colorScheme.primary,
+                                  ),
+                                ),
+                              )
+                              : Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Image.asset(
+                                    isDark
+                                        ? 'lib/assets/android_dark_sq_na@1x.png'
+                                        : 'lib/assets/android_light_sq_na@1x.png',
+                                    height: 24,
+                                    width: 24,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    'Đăng nhập với Google',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: colorScheme.onSurface,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
                   // Register Button
                   SizedBox(
                     width: double.infinity,
                     height: 56,
                     child: OutlinedButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const RegisterScreen(),
-                          ),
-                        );
-                      },
+                      onPressed:
+                          _isLoading || _isGoogleLoading
+                              ? null
+                              : () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const RegisterScreen(),
+                                  ),
+                                );
+                              },
                       style: OutlinedButton.styleFrom(
                         side: BorderSide(color: colorScheme.primary),
                         shape: RoundedRectangleBorder(

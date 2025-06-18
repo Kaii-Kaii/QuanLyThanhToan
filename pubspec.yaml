@@ -46,6 +46,8 @@ dependencies:
   flutter_local_notifications: ^19.2.1
   timezone: ^0.10.1
   permission_handler: ^11.3.1
+  google_sign_in: ^6.1.5
+
 
 dev_dependencies:
   flutter_test:
@@ -86,6 +88,8 @@ flutter:
   assets:
     - lib/assets/
     - lib/assets/image.png
+    - lib/assets/android_dark_sq_na@1x.png
+    - lib/assets/android_light_sq_na@1x.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

@@ -2,11 +2,13 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 class AuthService {
   // Khởi tạo các instance của Firebase Authentication và Cloud Firestore
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final GoogleSignIn _googleSignIn = GoogleSignIn();
 
   // --- CÁC HÀM GETTER ---
 
@@ -66,8 +68,65 @@ class AuthService {
     }
   }
 
+  /// Đăng nhập với Google và tự động tạo user document nếu chưa tồn tại
+  Future<UserCredential?> signInWithGoogle() async {
+    try {
+      // Bắt đầu quy trình xác thực
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+
+      if (googleUser == null) {
+        // Người dùng đã hủy bỏ việc đăng nhập
+        return null;
+      }
+
+      // Lấy thông tin xác thực từ yêu cầu
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+
+      // Tạo một credential mới
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      // Đăng nhập vào Firebase bằng credential của Google
+      final UserCredential userCredential = await _auth.signInWithCredential(
+        credential,
+      );
+
+      // Kiểm tra xem đây có phải là lần đăng nhập đầu tiên không
+      if (userCredential.additionalUserInfo?.isNewUser == true) {
+        // Tạo document cho user mới trong Firestore
+        await _createUserDocument(userCredential.user!);
+      }
+
+      return userCredential;
+    } catch (e) {
+      print('Lỗi đăng nhập Google: $e');
+      rethrow;
+    }
+  }
+
+  /// Tạo document cho user trong Firestore
+  Future<void> _createUserDocument(User user) async {
+    try {
+      await _firestore.collection('users').doc(user.uid).set({
+        'uid': user.uid,
+        'email': user.email,
+        'displayName': user.displayName ?? '', // Sử dụng displayName từ Google
+        'photoURL': user.photoURL ?? '', // Lưu ảnh đại diện từ Google
+        'createdAt': Timestamp.now(),
+        'loginMethod': 'google', // Đánh dấu phương thức đăng nhập
+      });
+    } catch (e) {
+      print('Lỗi tạo user document: $e');
+      // Không throw lỗi ở đây để không ảnh hưởng đến quá trình đăng nhập
+    }
+  }
+
   /// Đăng xuất người dùng hiện tại.
+  /// Hàm này sẽ đăng xuất khỏi cả Firebase và Google.
   Future<void> signOut() async {
-    await _auth.signOut();
+    await Future.wait([_auth.signOut(), _googleSignIn.signOut()]);
   }
 }
