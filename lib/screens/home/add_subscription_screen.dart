@@ -184,7 +184,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
             .collection('subscriptions')
             .add(subscriptionData);
 
-        // Thêm owner vào subscription_members
+        // Luôn thêm owner vào subscription_members (dù là cá nhân hay gia đình)
         await FirebaseFirestore.instance
             .collection('subscription_members')
             .add({

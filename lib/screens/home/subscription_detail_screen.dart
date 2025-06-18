@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import '../../utils/notification_helper.dart';
-import '../../services/auth_service.dart'; // Thêm dòng này để lấy currentUserId
+import '../../services/auth_service.dart';
 
 class SubscriptionDetailScreen extends StatefulWidget {
   final String subscriptionId;
@@ -73,6 +73,7 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
     if (data['nextPaymentDate'] != null) {
       _nextPaymentDate = (data['nextPaymentDate'] as Timestamp).toDate();
     }
+    _planType = data['planType'] ?? 'personal';
   }
 
   Future<void> _pickIcon() async {
@@ -138,7 +139,7 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
         'nextPaymentDate': Timestamp.fromDate(_nextPaymentDate),
         'notes': _notesController.text.trim(),
         'updatedAt': Timestamp.now(),
-        'planType': _planType, // Thêm dòng này
+        'planType': _planType,
       };
       if (iconUrl != null && iconUrl.isNotEmpty) {
         updateData['iconUrl'] = iconUrl;
@@ -149,18 +150,45 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
           .doc(widget.subscriptionId)
           .update(updateData);
 
-      // Xử lý chuyển đổi loại gói
+      // Handle plan type change
       final oldPlanType = currentData['planType'] ?? 'personal';
       if (oldPlanType == 'family' && _planType == 'personal') {
-        // Xoá tất cả thành viên (trừ owner)
-        final members =
-            await FirebaseFirestore.instance
-                .collection('subscription_members')
-                .where('subscriptionId', isEqualTo: widget.subscriptionId)
-                .where('role', isEqualTo: 'member')
-                .get();
+        // Remove all members (except owner)
+        final members = await FirebaseFirestore.instance
+            .collection('subscription_members')
+            .where('subscriptionId', isEqualTo: widget.subscriptionId)
+            .where('role', isEqualTo: 'member')
+            .get();
         for (final doc in members.docs) {
           await doc.reference.delete();
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Đã chuyển về gói cá nhân và xoá các thành viên!'),
+            ),
+          );
+        }
+      }
+      // Add owner to subscription_members if switch to family
+      if (oldPlanType == 'personal' && _planType == 'family') {
+        final ownerId = currentData['userId'];
+        final memberQuery = await FirebaseFirestore.instance
+            .collection('subscription_members')
+            .where('subscriptionId', isEqualTo: widget.subscriptionId)
+            .where('userId', isEqualTo: ownerId)
+            .where('role', isEqualTo: 'owner')
+            .get();
+        if (memberQuery.docs.isEmpty) {
+          await FirebaseFirestore.instance
+              .collection('subscription_members')
+              .add({
+            'subscriptionId': widget.subscriptionId,
+            'userId': ownerId,
+            'role': 'owner',
+            'ownerId': ownerId,
+            'joinedAt': Timestamp.now(),
+          });
         }
       }
 
@@ -257,6 +285,15 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
         return 'Hàng năm';
       default:
         return '';
+    }
+  }
+
+  String getPlanTypeLabel(String planType) {
+    switch (planType) {
+      case 'family':
+        return 'Gói gia đình';
+      default:
+        return 'Gói cá nhân';
     }
   }
 
@@ -487,7 +524,6 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Amount
           Expanded(
             flex: 3,
             child: _buildInputSection(
@@ -515,7 +551,6 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
             ),
           ),
           const SizedBox(width: 10),
-          // Currency - compact, same height as amount
           Container(
             margin: const EdgeInsets.only(bottom: 0),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
@@ -574,8 +609,31 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
     );
   }
 
+  Widget _buildPlanTypeSelector(String oldPlanType) {
+    return Row(
+      children: [
+        const Text('Loại gói:'),
+        const SizedBox(width: 16),
+        DropdownButton<String>(
+          value: _planType,
+          items: const [
+            DropdownMenuItem(value: 'personal', child: Text('Cá nhân')),
+            DropdownMenuItem(value: 'family', child: Text('Gia đình')),
+          ],
+          onChanged: (value) {
+            if (value == null) return;
+            setState(() {
+              _planType = value;
+            });
+          },
+        ),
+      ],
+    );
+  }
+
   Widget _buildEditingView(Map<String, dynamic> data) {
     final colorScheme = Theme.of(context).colorScheme;
+    final oldPlanType = data['planType'] ?? 'personal';
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
       child: Form(
@@ -583,11 +641,8 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Icon section - giống như trong add screen
             Center(child: _buildImagePicker(data)),
             const SizedBox(height: 24),
-
-            // Tên dịch vụ
             _buildInputSection(
               label: 'Tên dịch vụ',
               icon: Icons.apps_rounded,
@@ -605,12 +660,8 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
                 style: const TextStyle(fontSize: 15),
               ),
             ),
-
-            // Amount & Currency row - giống như add screen
             _buildAmountCurrencyEditRow(),
             const SizedBox(height: 12),
-
-            // Chu kỳ thanh toán
             _buildInputSection(
               label: 'Chu kỳ thanh toán',
               icon: Icons.repeat_rounded,
@@ -638,8 +689,6 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
                 style: const TextStyle(fontSize: 15),
               ),
             ),
-
-            // Ngày thanh toán tiếp theo
             _buildInputSection(
               label: 'Ngày thanh toán tiếp theo',
               icon: Icons.calendar_month_outlined,
@@ -658,8 +707,6 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
                 ),
               ),
             ),
-
-            // Ghi chú
             _buildInputSection(
               label: 'Ghi chú (tuỳ chọn)',
               icon: Icons.edit_note_rounded,
@@ -673,10 +720,9 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
                 style: const TextStyle(fontSize: 15),
               ),
             ),
-
+            const SizedBox(height: 12),
+            _buildPlanTypeSelector(oldPlanType),
             const SizedBox(height: 24),
-
-            // Buttons
             Row(
               children: [
                 Expanded(
@@ -802,7 +848,6 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Icon section - giống như trong add screen
           Center(
             child: Container(
               width: 110,
@@ -847,32 +892,45 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
             ),
           ),
           const SizedBox(height: 24),
-
-          // Tên dịch vụ
+          // LOẠI GÓI: family/personal
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                data['planType'] == 'family'
+                    ? Icons.groups
+                    : Icons.person_outline,
+                color: Theme.of(context).colorScheme.primary,
+                size: 22,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                getPlanTypeLabel(data['planType']),
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).colorScheme.primary,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
           _buildInfoSection(
             label: 'Tên dịch vụ',
             value: data['serviceName'] ?? '',
             icon: Icons.apps_rounded,
           ),
-
-          // Giá và tiền tệ - hiển thị trên cùng một hàng
           _buildAmountCurrencyInfo(formattedAmount, currency),
-
-          // Chu kỳ thanh toán
           _buildInfoSection(
             label: 'Chu kỳ thanh toán',
             value: getVietnameseCycle(data['paymentCycle']),
             icon: Icons.repeat_rounded,
           ),
-
-          // Ngày thanh toán tiếp theo
           _buildInfoSection(
             label: 'Ngày thanh toán tiếp theo',
             value: formattedDate,
             icon: Icons.calendar_month_outlined,
           ),
-
-          // Ghi chú (chỉ hiển thị nếu có)
           if (data['notes'] != null &&
               data['notes'].toString().trim().isNotEmpty)
             _buildInfoSection(
@@ -881,12 +939,11 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
               icon: Icons.edit_note_rounded,
               isMultiLine: true,
             ),
-
           const SizedBox(height: 20),
           if ((data['planType'] ?? '') == 'family') ...[
             if (isOwner) _buildAddMemberSection(),
             const SizedBox(height: 12),
-            _buildMemberList(),
+            _buildMemberList(data['userId']),
           ],
         ],
       ),
@@ -907,7 +964,7 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
         'subscriptionId': widget.subscriptionId,
         'userId': uid,
         'role': 'member',
-        'ownerId': ownerId, // Thêm trường này
+        'ownerId': ownerId,
         'joinedAt': Timestamp.now(),
       });
       if (mounted) {
@@ -955,49 +1012,112 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
     );
   }
 
-  Widget _buildMemberList() {
+  Widget _buildMemberList(String ownerId) {
     return StreamBuilder<QuerySnapshot>(
-      stream:
-          FirebaseFirestore.instance
-              .collection('subscription_members')
-              .where('subscriptionId', isEqualTo: widget.subscriptionId)
-              .snapshots(),
+      stream: FirebaseFirestore.instance
+          .collection('subscription_members')
+          .where('subscriptionId', isEqualTo: widget.subscriptionId)
+          .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          return const CircularProgressIndicator();
+          return const Center(child: CircularProgressIndicator());
         }
         final members = snapshot.data!.docs;
+
         if (members.isEmpty) {
-          return const Text('Chưa có thành viên nào.');
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text('Chưa có thành viên nào.'),
+          );
         }
+
+        // Put owner on top if found, otherwise keep original order
+        QueryDocumentSnapshot? ownerDoc;
+        final ownerIndex = members.indexWhere((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          return data['role'] == 'owner' || data['userId'] == ownerId;
+        });
+        if (ownerIndex != -1) {
+          ownerDoc = members[ownerIndex];
+        } else {
+          ownerDoc = null;
+        }
+        final memberDocs = ownerDoc != null
+            ? members.where((doc) => doc != ownerDoc).toList()
+            : members.toList();
+
+        List<QueryDocumentSnapshot> sortedList =
+            ownerDoc != null ? [ownerDoc, ...memberDocs] : memberDocs;
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Thành viên:',
-              style: TextStyle(fontWeight: FontWeight.bold),
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Text(
+                'Thành viên:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
             ),
-            ...members.map((doc) {
+            ...sortedList.map((doc) {
               final data = doc.data() as Map<String, dynamic>;
               final userId = data['userId'] ?? '';
               final role = data['role'] ?? '';
               return FutureBuilder<DocumentSnapshot>(
-                future:
-                    FirebaseFirestore.instance
-                        .collection('users')
-                        .doc(userId)
-                        .get(),
+                future: FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(userId)
+                    .get(),
                 builder: (context, userSnapshot) {
                   String displayName = userId;
+                  String? avatarUrl;
                   if (userSnapshot.hasData && userSnapshot.data!.exists) {
                     final userData =
                         userSnapshot.data!.data() as Map<String, dynamic>;
                     displayName = userData['displayName'] ?? userId;
+                    avatarUrl = userData['avatar'];
                   }
-                  return ListTile(
-                    title: Text(displayName),
-                    subtitle: Text('UID: $userId\nQuyền: $role'),
-                    isThreeLine: true,
+                  return Card(
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    elevation: 1,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
+                            ? NetworkImage(avatarUrl)
+                            : null,
+                        child: (avatarUrl == null || avatarUrl.isEmpty)
+                            ? const Icon(Icons.person)
+                            : null,
+                      ),
+                      title: Text(
+                        displayName,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            role == 'owner' ? 'Chủ sở hữu' : 'Thành viên',
+                            style: TextStyle(
+                              color: role == 'owner'
+                                  ? Colors.blue
+                                  : Colors.grey[700],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            'UID: $userId',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   );
                 },
               );
@@ -1008,45 +1128,21 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
     );
   }
 
-  Widget _buildPlanTypeSelector() {
-    return Row(
-      children: [
-        const Text('Loại gói:'),
-        const SizedBox(width: 16),
-        DropdownButton<String>(
-          value: _planType,
-          items: const [
-            DropdownMenuItem(value: 'personal', child: Text('Cá nhân')),
-            DropdownMenuItem(value: 'family', child: Text('Gia đình')),
-          ],
-          onChanged: (value) {
-            setState(() {
-              _planType = value!;
-            });
-          },
-        ),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final currentUserId = AuthService().currentUser?.uid;
     return StreamBuilder<DocumentSnapshot>(
-      stream:
-          FirebaseFirestore.instance
-              .collection('subscriptions')
-              .doc(widget.subscriptionId)
-              .snapshots(),
+      stream: FirebaseFirestore.instance
+          .collection('subscriptions')
+          .doc(widget.subscriptionId)
+          .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        // Sửa đoạn này:
         if (!snapshot.data!.exists || snapshot.data!.data() == null) {
-          // Không pop ở đây nữa!
           return const Scaffold(
             body: Center(
               child: Text('Dịch vụ này đã bị xoá hoặc không tồn tại.'),
@@ -1133,10 +1229,8 @@ class _SubscriptionDetailScreenState extends State<SubscriptionDetailScreen> {
             ],
           ),
           body:
-              _isEditing
-                  ? (isOwner
-                      ? _buildEditingView(data)
-                      : _buildViewingMode(data))
+              _isEditing && isOwner
+                  ? _buildEditingView(data)
                   : _buildViewingMode(data, isOwner: isOwner),
         );
       },
