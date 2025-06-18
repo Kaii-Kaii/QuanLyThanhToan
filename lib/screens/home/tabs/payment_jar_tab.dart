@@ -15,6 +15,16 @@ class PaymentJarTab extends StatelessWidget {
     required this.theme,
   });
 
+  Future<List<String>> getMemberSubscriptionIds(String userId) async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('subscription_members')
+        .where('userId', isEqualTo: userId)
+        .get();
+    return snapshot.docs
+        .map((doc) => doc['subscriptionId'] as String)
+        .toList();
+  }
+
   Widget _buildWelcomeSection() {
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
@@ -382,69 +392,83 @@ class PaymentJarTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot>(
-      stream:
-          FirebaseFirestore.instance
+    return FutureBuilder<List<String>>(
+      future: getMemberSubscriptionIds(currentUserId),
+      builder: (context, memberSnapshot) {
+        if (memberSnapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator(color: theme.colorScheme.primary));
+        }
+        final memberSubIds = memberSnapshot.data ?? [];
+
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
               .collection('subscriptions')
-              .where('userId', isEqualTo: currentUserId)
+              .where(
+                Filter.or(
+                  Filter('userId', isEqualTo: currentUserId),
+                  Filter(FieldPath.documentId, whereIn: memberSubIds.isEmpty ? ['dummy'] : memberSubIds),
+                ),
+              )
               .orderBy('nextPaymentDate', descending: false)
               .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.error_outline,
-                  size: 64,
-                  color: theme.colorScheme.error,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      size: 64,
+                      color: theme.colorScheme.error,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Đã xảy ra lỗi',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${snapshot.error}',
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurface.withOpacity(0.7),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  'Đã xảy ra lỗi',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: theme.colorScheme.onSurface,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '${snapshot.error}',
-                  style: TextStyle(
-                    color: theme.colorScheme.onSurface.withOpacity(0.7),
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          );
-        }
+              );
+            }
 
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(
-            child: CircularProgressIndicator(color: theme.colorScheme.primary),
-          );
-        }
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return Center(
+                child: CircularProgressIndicator(color: theme.colorScheme.primary),
+              );
+            }
 
-        final docs = snapshot.data!.docs;
-        final List<QueryDocumentSnapshot> soonestPayments =
-            docs.length > 10 ? docs.sublist(0, 10) : docs;
+            final docs = snapshot.data!.docs;
+            final List<QueryDocumentSnapshot> soonestPayments =
+                docs.length > 10 ? docs.sublist(0, 10) : docs;
 
-        if (soonestPayments.isEmpty) {
-          return SingleChildScrollView(child: _buildEmptyState());
-        }
+            if (soonestPayments.isEmpty) {
+              return SingleChildScrollView(child: _buildEmptyState());
+            }
 
-        return SingleChildScrollView(
-          child: Column(
-            children: [
-              _buildWelcomeSection(),
-              const SizedBox(height: 16),
-              _buildJarSection(context, soonestPayments, docs),
-              const SizedBox(height: 40),
-            ],
-          ),
+            return SingleChildScrollView(
+              child: Column(
+                children: [
+                  _buildWelcomeSection(),
+                  const SizedBox(height: 16),
+                  _buildJarSection(context, soonestPayments, docs),
+                  const SizedBox(height: 40),
+                ],
+              ),
+            );
+          },
         );
       },
     );

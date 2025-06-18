@@ -28,6 +28,16 @@ class _ListCalendarTabState extends State<ListCalendarTab> {
   Set<DateTime> _paymentDays = {};
   List<QueryDocumentSnapshot>? _subscriptionsForSelectedDay;
 
+  Future<List<String>> getMemberSubscriptionIds(String userId) async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('subscription_members')
+        .where('userId', isEqualTo: userId)
+        .get();
+    return snapshot.docs
+        .map((doc) => doc['subscriptionId'] as String)
+        .toList();
+  }
+
   void _showPaymentsForDay(DateTime day, List<QueryDocumentSnapshot> allDocs) {
     final filtered =
         allDocs.where((doc) {
@@ -48,50 +58,58 @@ class _ListCalendarTabState extends State<ListCalendarTab> {
 
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
-      onRefresh: () async {
-        widget.onRefresh();
-        setState(() {});
+    return FutureBuilder<List<String>>(
+      future: getMemberSubscriptionIds(widget.currentUserId),
+      builder: (context, memberSnapshot) {
+        if (memberSnapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final memberSubIds = memberSnapshot.data ?? [];
+
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('subscriptions')
+              .where(
+                Filter.or(
+                  Filter('userId', isEqualTo: widget.currentUserId),
+                  Filter(FieldPath.documentId, whereIn: memberSubIds.isEmpty ? ['dummy'] : memberSubIds),
+                ),
+              )
+              .orderBy('nextPaymentDate', descending: false)
+              .snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Center(child: Text('Đã xảy ra lỗi: ${snapshot.error}'));
+            }
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final docs = snapshot.data!.docs;
+            final paymentDates =
+                docs
+                    .map(
+                      (doc) => (doc['nextPaymentDate'] as Timestamp?)?.toDate(),
+                    )
+                    .whereType<DateTime>()
+                    .toSet();
+
+            if (_paymentDays != paymentDates) {
+              _paymentDays = paymentDates;
+            }
+
+            if (_selectedDay != null) {
+              return _buildSelectedDayView(docs);
+            }
+
+            if (docs.isEmpty) {
+              return _buildEmptyView(docs);
+            }
+
+            return _buildMainView(docs, paymentDates);
+          },
+        );
       },
-      child: StreamBuilder<QuerySnapshot>(
-        stream:
-            FirebaseFirestore.instance
-                .collection('subscriptions')
-                .where('userId', isEqualTo: widget.currentUserId)
-                .orderBy('nextPaymentDate', descending: false)
-                .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(child: Text('Đã xảy ra lỗi: ${snapshot.error}'));
-          }
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          final docs = snapshot.data!.docs;
-          final paymentDates =
-              docs
-                  .map(
-                    (doc) => (doc['nextPaymentDate'] as Timestamp?)?.toDate(),
-                  )
-                  .whereType<DateTime>()
-                  .toSet();
-
-          if (_paymentDays != paymentDates) {
-            _paymentDays = paymentDates;
-          }
-
-          if (_selectedDay != null) {
-            return _buildSelectedDayView(docs);
-          }
-
-          if (docs.isEmpty) {
-            return _buildEmptyView(docs);
-          }
-
-          return _buildMainView(docs, paymentDates);
-        },
-      ),
     );
   }
 
