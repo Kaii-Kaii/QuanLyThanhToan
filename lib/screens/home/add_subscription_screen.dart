@@ -479,24 +479,30 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                     isDense: true,
                     contentPadding: EdgeInsets.zero,
                   ),
-                  items:
-                      _currencies
-                          .map(
-                            (e) => DropdownMenuItem(
-                              value: e['value'],
-                              child: Text(
-                                e['value']!,
-                                style: const TextStyle(fontSize: 15),
-                              ),
+                  items: _currencies
+                      .map(
+                        (e) => DropdownMenuItem(
+                          value: e['value'],
+                          child: Text(
+                            e['value']!,
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: Theme.of(context).colorScheme.onSurface, // Sửa màu chữ
                             ),
-                          )
-                          .toList(),
+                          ),
+                        ),
+                      )
+                      .toList(),
                   onChanged: (value) {
                     setState(() {
                       _selectedCurrency = value!;
                     });
                   },
-                  style: const TextStyle(fontSize: 15),
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: Theme.of(context).colorScheme.onSurface, // Sửa màu chữ
+                  ),
+                  dropdownColor: Theme.of(context).colorScheme.surface, // Nền dropdown
                   menuMaxHeight: 300,
                 ),
               ],
@@ -697,21 +703,29 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                     border: InputBorder.none,
                     isDense: true,
                   ),
-                  items:
-                      _periods
-                          .map(
-                            (e) => DropdownMenuItem(
-                              value: e['value'],
-                              child: Text(e['label']!),
+                  items: _periods
+                      .map(
+                        (e) => DropdownMenuItem(
+                          value: e['value'],
+                          child: Text(
+                            e['label']!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface, // Sửa màu chữ
                             ),
-                          )
-                          .toList(),
+                          ),
+                        ),
+                      )
+                      .toList(),
                   onChanged: (value) {
                     setState(() {
                       _selectedPeriod = value!;
                     });
                   },
-                  style: const TextStyle(fontSize: 15),
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: Theme.of(context).colorScheme.onSurface, // Sửa màu chữ
+                  ),
+                  dropdownColor: Theme.of(context).colorScheme.surface, // Nền dropdown
                 ),
               ),
               _buildInputSection(

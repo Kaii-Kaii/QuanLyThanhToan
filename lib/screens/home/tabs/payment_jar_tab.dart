@@ -182,7 +182,7 @@ class PaymentJarTab extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Lọ Thanh Toán',
+                      'Các khoản thanh toán',
                       style: TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
